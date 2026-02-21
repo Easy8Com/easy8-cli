@@ -1,0 +1,397 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"easy8-cli/internal/api"
+	"easy8-cli/internal/config"
+)
+
+func Run(args []string) int {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		return 1
+	}
+
+	if len(args) == 0 {
+		printUsage()
+		return 2
+	}
+
+	switch args[0] {
+	case "issue":
+		return runIssue(args[1:], cfg)
+	case "help", "-h", "--help":
+		printUsage()
+		return 0
+	default:
+		fmt.Fprintln(os.Stderr, "unknown command:", args[0])
+		printUsage()
+		return 2
+	}
+}
+
+func runIssue(args []string, cfg config.Config) int {
+	if len(args) == 0 {
+		printIssueUsage()
+		return 2
+	}
+
+	client := api.NewClient(cfg)
+
+	switch args[0] {
+	case "create":
+		return runIssueCreate(args[1:], cfg, client)
+	case "list":
+		return runIssueList(args[1:], cfg, client)
+	case "search":
+		return runIssueSearch(args[1:], cfg, client)
+	case "update":
+		return runIssueUpdate(args[1:], cfg, client)
+	case "help", "-h", "--help":
+		printIssueUsage()
+		return 0
+	default:
+		fmt.Fprintln(os.Stderr, "unknown issue command:", args[0])
+		printIssueUsage()
+		return 2
+	}
+}
+
+func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("issue create", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	subject := fs.String("subject", "", "Issue subject (required)")
+	description := fs.String("description", "", "Issue description")
+	projectID := fs.Int("project-id", cfg.Defaults.ProjectID, "Project ID")
+	trackerID := fs.Int("tracker-id", cfg.Defaults.TrackerID, "Tracker ID")
+	statusID := fs.Int("status-id", cfg.Defaults.StatusID, "Status ID")
+	priorityID := fs.Int("priority-id", cfg.Defaults.PriorityID, "Priority ID")
+	authorID := fs.Int("author-id", cfg.Defaults.AuthorID, "Author ID")
+	assignedToID := fs.Int("assigned-to-id", cfg.Defaults.AssignedToID, "Assigned to user ID")
+	startDate := fs.String("start-date", "", "Start date (YYYY-MM-DD)")
+	dueDate := fs.String("due-date", "", "Due date (YYYY-MM-DD)")
+	var doneRatio optionalInt
+	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireString("subject", *subject); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("project-id", *projectID); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("tracker-id", *trackerID); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("status-id", *statusID); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("priority-id", *priorityID); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("author-id", *authorID); err != nil {
+		return usageError(err)
+	}
+	if err := requireInt("assigned-to-id", *assignedToID); err != nil {
+		return usageError(err)
+	}
+
+	input := api.IssueInput{
+		Subject:      stringPtr(*subject),
+		ProjectID:    intPtr(*projectID),
+		TrackerID:    intPtr(*trackerID),
+		StatusID:     intPtr(*statusID),
+		PriorityID:   intPtr(*priorityID),
+		AuthorID:     intPtr(*authorID),
+		AssignedToID: intPtr(*assignedToID),
+	}
+	if strings.TrimSpace(*description) != "" {
+		input.Description = stringPtr(*description)
+	}
+	if strings.TrimSpace(*startDate) != "" {
+		input.StartDate = stringPtr(*startDate)
+	}
+	if strings.TrimSpace(*dueDate) != "" {
+		input.DueDate = stringPtr(*dueDate)
+	}
+	if doneRatio.set {
+		input.DoneRatio = intPtr(doneRatio.value)
+	}
+
+	resp, err := client.CreateIssue(context.Background(), input)
+	if err != nil {
+		return apiError(err)
+	}
+
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputIssues([]api.Issue{resp.Issue})
+}
+
+func runIssueList(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("issue list", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	limit := fs.Int("limit", 25, "Limit (max 100)")
+	offset := fs.Int("offset", 0, "Offset")
+	sort := fs.String("sort", "", "Sort expression")
+	query := fs.String("q", "", "Free-text query (easy_query_q)")
+	include := fs.String("include", "", "Include fields (comma-separated)")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	params := api.IssueListParams{
+		Limit:  *limit,
+		Offset: *offset,
+		Sort:   strings.TrimSpace(*sort),
+		Query:  strings.TrimSpace(*query),
+	}
+	if strings.TrimSpace(*include) != "" {
+		params.Include = splitComma(*include)
+	}
+
+	resp, err := client.ListIssues(context.Background(), params)
+	if err != nil {
+		return apiError(err)
+	}
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputIssues(resp.Issues)
+}
+
+func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("issue search", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	query := fs.String("q", "", "Search query (required)")
+	openIssues := fs.Bool("open", false, "Only open issues")
+	scope := fs.Int("scope", 0, "Project scope (project ID)")
+	issuesOnly := fs.Bool("issues", true, "Search issues")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireString("q", *query); err != nil {
+		return usageError(err)
+	}
+
+	params := api.SearchParams{
+		Query:      *query,
+		OpenIssues: *openIssues,
+		Scope:      *scope,
+		IssuesOnly: *issuesOnly,
+	}
+
+	resp, err := client.Search(context.Background(), params)
+	if err != nil {
+		return apiError(err)
+	}
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputSearch(resp.Results)
+}
+
+func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("issue update", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	id := fs.Int("id", 0, "Issue ID (required)")
+	subject := fs.String("subject", "", "Issue subject")
+	description := fs.String("description", "", "Issue description")
+	var statusID optionalInt
+	var priorityID optionalInt
+	var assignedToID optionalInt
+	var doneRatio optionalInt
+	fs.Var(&statusID, "status-id", "Status ID")
+	fs.Var(&priorityID, "priority-id", "Priority ID")
+	fs.Var(&assignedToID, "assigned-to-id", "Assigned to user ID")
+	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
+	notes := fs.String("notes", "", "Notes (journal entry)")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireInt("id", *id); err != nil {
+		return usageError(err)
+	}
+
+	input := api.IssueInput{}
+	if strings.TrimSpace(*subject) != "" {
+		input.Subject = stringPtr(*subject)
+	}
+	if strings.TrimSpace(*description) != "" {
+		input.Description = stringPtr(*description)
+	}
+	if statusID.set {
+		input.StatusID = intPtr(statusID.value)
+	}
+	if priorityID.set {
+		input.PriorityID = intPtr(priorityID.value)
+	}
+	if assignedToID.set {
+		input.AssignedToID = intPtr(assignedToID.value)
+	}
+	if doneRatio.set {
+		input.DoneRatio = intPtr(doneRatio.value)
+	}
+	if strings.TrimSpace(*notes) != "" {
+		input.Notes = stringPtr(*notes)
+	}
+
+	resp, err := client.UpdateIssue(context.Background(), *id, input)
+	if err != nil {
+		return apiError(err)
+	}
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputIssues([]api.Issue{resp.Issue})
+}
+
+func usageError(err error) int {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+	}
+	return 2
+}
+
+func requireString(name, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("--%s is required", name)
+	}
+	return nil
+}
+
+func requireInt(name string, value int) error {
+	if value == 0 {
+		return fmt.Errorf("--%s is required", name)
+	}
+	return nil
+}
+
+func printUsage() {
+	lines := []string{
+		"easy8-cli",
+		"",
+		"Usage:",
+		"  easy8 issue <command> [flags]",
+		"",
+		"Commands:",
+		"  issue create   Create a new issue",
+		"  issue list     List issues",
+		"  issue search   Fulltext search",
+		"  issue update   Update an issue",
+		"",
+		"Use 'easy8 issue --help' for details.",
+	}
+	for _, line := range lines {
+		fmt.Fprintln(os.Stderr, line)
+	}
+}
+
+func printIssueUsage() {
+	lines := []string{
+		"easy8 issue",
+		"",
+		"Usage:",
+		"  easy8 issue create [flags]",
+		"  easy8 issue list [flags]",
+		"  easy8 issue search [flags]",
+		"  easy8 issue update [flags]",
+		"",
+		"Examples:",
+		"  easy8 issue list --limit 10",
+		"  easy8 issue search --q \"onboarding\" --open",
+		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2",
+		"  easy8 issue update --id 123 --status-id 5",
+	}
+	for _, line := range lines {
+		fmt.Fprintln(os.Stderr, line)
+	}
+}
+
+type optionalInt struct {
+	set   bool
+	value int
+}
+
+func (flagValue *optionalInt) String() string {
+	if !flagValue.set {
+		return ""
+	}
+	return fmt.Sprintf("%d", flagValue.value)
+}
+
+func (flagValue *optionalInt) Set(value string) error {
+	parsed, err := parseInt(value)
+	if err != nil {
+		return err
+	}
+	flagValue.value = parsed
+	flagValue.set = true
+	return nil
+}
+
+func parseInt(value string) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int: %s", value)
+	}
+	return parsed, nil
+}
+
+func splitComma(input string) []string {
+	parts := strings.Split(input, ",")
+	var result []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func stringPtr(value string) *string {
+	return &value
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func apiError(err error) int {
+	var apiErr api.APIError
+	if errors.As(err, &apiErr) {
+		fmt.Fprintf(os.Stderr, "api error %d: %s\n", apiErr.StatusCode, apiErr.Body)
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+	}
+	return 1
+}
