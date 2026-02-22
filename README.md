@@ -78,8 +78,24 @@ easy8 issue list --limit 10 --sort "priority:desc,due_date"
 Search issues (fulltext):
 
 ```bash
-easy8 issue search --q "onboarding" --open
+easy8 issue search --q "onboarding"
 ```
+
+Search issues with filters:
+
+```bash
+easy8 issue search --q "petr" --assignee-id 51 --status-id 2 --priority-id 3 --due-date 2024-01-10 --subject "Login" --task-type-id 1
+```
+
+Search issues with name lookups:
+
+```bash
+easy8 issue search --q "petr" --assignee "Alice Doe" --status "New" --priority "High" --task-type "Task" --project "Project A"
+```
+
+Notes:
+- For assignee, status, priority, task type, and project you can use either name or ID.
+- Name lookups are resolved via `/users.json`, `/issue_statuses.json`, `/enumerations/issue_priorities.json`, `/trackers.json`, `/projects.json`.
 
 Create issue:
 

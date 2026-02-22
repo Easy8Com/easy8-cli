@@ -31,6 +31,27 @@ func TestListIssuesBuildsQuery(t *testing.T) {
 		if query.Get("include") != "attachments,relations" {
 			t.Fatalf("include = %s", query.Get("include"))
 		}
+		if query.Get("assigned_to_id") != "42" {
+			t.Fatalf("assigned_to_id = %s", query.Get("assigned_to_id"))
+		}
+		if query.Get("due_date") != "2024-01-10" {
+			t.Fatalf("due_date = %s", query.Get("due_date"))
+		}
+		if query.Get("status_id") != "2" {
+			t.Fatalf("status_id = %s", query.Get("status_id"))
+		}
+		if query.Get("priority_id") != "3" {
+			t.Fatalf("priority_id = %s", query.Get("priority_id"))
+		}
+		if query.Get("subject") != "Fix" {
+			t.Fatalf("subject = %s", query.Get("subject"))
+		}
+		if query.Get("tracker_id") != "7" {
+			t.Fatalf("tracker_id = %s", query.Get("tracker_id"))
+		}
+		if query.Get("project_id") != "11" {
+			t.Fatalf("project_id = %s", query.Get("project_id"))
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{\"issues\":[{\"id\":1,\"subject\":\"Test\"}],\"total_count\":1,\"offset\":0,\"limit\":25}"))
 	}))
@@ -38,11 +59,18 @@ func TestListIssuesBuildsQuery(t *testing.T) {
 
 	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
 	params := IssueListParams{
-		Limit:   10,
-		Offset:  5,
-		Sort:    "priority:desc",
-		Query:   "onboarding",
-		Include: []string{"attachments", "relations"},
+		Limit:      10,
+		Offset:     5,
+		Sort:       "priority:desc",
+		Query:      "onboarding",
+		Include:    []string{"attachments", "relations"},
+		AssigneeID: 42,
+		DueDate:    "2024-01-10",
+		StatusID:   2,
+		PriorityID: 3,
+		Subject:    "Fix",
+		TaskTypeID: 7,
+		ProjectID:  11,
 	}
 	resp, err := client.ListIssues(context.Background(), params)
 	if err != nil {
@@ -154,5 +182,64 @@ func TestMissingAPIKey(t *testing.T) {
 	_, err := client.ListIssues(context.Background(), IssueListParams{})
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestLookupEndpoints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/trackers.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"trackers\":[{\"id\":1,\"name\":\"Task\"}]}"))
+		case "/issue_statuses.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"issue_statuses\":[{\"id\":2,\"name\":\"New\"}]}"))
+		case "/enumerations/issue_priorities.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"issue_priorities\":[{\"id\":3,\"name\":\"High\"}]}"))
+		case "/users.json":
+			q := r.URL.Query()
+			if q.Get("offset") == "0" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("{\"users\":[{\"id\":10,\"login\":\"alice\",\"firstname\":\"Alice\",\"lastname\":\"Doe\"}],\"total_count\":2,\"offset\":0,\"limit\":1}"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"users\":[{\"id\":11,\"login\":\"bob\",\"firstname\":\"Bob\",\"lastname\":\"Smith\"}],\"total_count\":2,\"offset\":1,\"limit\":1}"))
+		case "/projects.json":
+			q := r.URL.Query()
+			if q.Get("offset") == "0" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte("{\"projects\":[{\"id\":20,\"name\":\"Alpha\"}],\"total_count\":2,\"offset\":0,\"limit\":1}"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"projects\":[{\"id\":21,\"name\":\"Beta\"}],\"total_count\":2,\"offset\":1,\"limit\":1}"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	trackers, err := client.ListTrackers(context.Background())
+	if err != nil || len(trackers) != 1 || trackers[0].ID != 1 {
+		t.Fatalf("trackers: %v %v", trackers, err)
+	}
+	statuses, err := client.ListIssueStatuses(context.Background())
+	if err != nil || len(statuses) != 1 || statuses[0].ID != 2 {
+		t.Fatalf("statuses: %v %v", statuses, err)
+	}
+	priorities, err := client.ListIssuePriorities(context.Background())
+	if err != nil || len(priorities) != 1 || priorities[0].ID != 3 {
+		t.Fatalf("priorities: %v %v", priorities, err)
+	}
+	users, err := client.ListUsers(context.Background())
+	if err != nil || len(users) != 2 {
+		t.Fatalf("users: %v %v", users, err)
+	}
+	projects, err := client.ListProjects(context.Background())
+	if err != nil || len(projects) != 2 {
+		t.Fatalf("projects: %v %v", projects, err)
 	}
 }

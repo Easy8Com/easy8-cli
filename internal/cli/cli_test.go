@@ -42,9 +42,12 @@ func TestIssueCreateMissingSubject(t *testing.T) {
 func TestIssueSearchMissingQuery(t *testing.T) {
 	setTestHome(t)
 
-	code := Run([]string{"issue", "search"})
+	_, stderr, code := captureRun(t, []string{"issue", "search"})
 	if code != 2 {
 		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "at least one filter is required") {
+		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
 
@@ -117,7 +120,7 @@ func TestIssueSearchTableOutput(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "issue") || !strings.Contains(stdout, "Fix onboarding") {
+	if !strings.Contains(stdout, "Fix onboarding") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -131,6 +134,41 @@ func TestIssueListAPIError(t *testing.T) {
 		t.Fatalf("code = %d stdout=%s", code, stdout)
 	}
 	if !strings.Contains(stderr, "api error 500") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueSearchNameFilters(t *testing.T) {
+	server := newLookupServer(t)
+	setTestEnv(t, server.URL)
+
+	args := []string{
+		"issue", "search", "--q", "petr",
+		"--assignee", "Alice Doe",
+		"--status", "New",
+		"--priority", "High",
+		"--task-type", "Task",
+		"--project", "Project A",
+	}
+	stdout, stderr, code := captureRun(t, args)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Fix onboarding") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestIssueSearchNameConflict(t *testing.T) {
+	server := newLookupServer(t)
+	setTestEnv(t, server.URL)
+
+	args := []string{"issue", "search", "--q", "petr", "--status-id", "1", "--status", "New"}
+	_, stderr, code := captureRun(t, args)
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "status-id does not match status name") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
@@ -212,9 +250,52 @@ func newTestServer(t *testing.T) *httptest.Server {
 		_, _ = w.Write([]byte("{\"issue\":{\"id\":101,\"subject\":\"Fix onboarding\",\"status\":{\"id\":2,\"name\":\"In Progress\"}}}"))
 	})
 
-	handler.HandleFunc("/search.json", func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(handler)
+}
+
+func newLookupServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/users.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("{\"results\":[{\"id\":101,\"type\":\"issue\",\"title\":\"Fix onboarding\",\"url\":\"https://example.com/issues/101\",\"description\":\"\",\"datetime\":\"2024-01-01\"}],\"total_count\":1,\"offset\":0,\"limit\":25}"))
+		_, _ = w.Write([]byte("{\"users\":[{\"id\":11,\"login\":\"alice\",\"firstname\":\"Alice\",\"lastname\":\"Doe\"}],\"total_count\":1,\"offset\":0,\"limit\":100}"))
+	})
+	handler.HandleFunc("/issue_statuses.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"issue_statuses\":[{\"id\":2,\"name\":\"New\"}]}"))
+	})
+	handler.HandleFunc("/enumerations/issue_priorities.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"issue_priorities\":[{\"id\":3,\"name\":\"High\"}]}"))
+	})
+	handler.HandleFunc("/trackers.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"trackers\":[{\"id\":4,\"name\":\"Task\"}]}"))
+	})
+	handler.HandleFunc("/projects.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"projects\":[{\"id\":5,\"name\":\"Project A\"}],\"total_count\":1,\"offset\":0,\"limit\":100}"))
+	})
+	handler.HandleFunc("/issues.json", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		if query.Get("assigned_to_id") != "11" {
+			t.Fatalf("assigned_to_id = %s", query.Get("assigned_to_id"))
+		}
+		if query.Get("status_id") != "2" {
+			t.Fatalf("status_id = %s", query.Get("status_id"))
+		}
+		if query.Get("priority_id") != "3" {
+			t.Fatalf("priority_id = %s", query.Get("priority_id"))
+		}
+		if query.Get("tracker_id") != "4" {
+			t.Fatalf("tracker_id = %s", query.Get("tracker_id"))
+		}
+		if query.Get("project_id") != "5" {
+			t.Fatalf("project_id = %s", query.Get("project_id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"issues\":[{\"id\":101,\"subject\":\"Fix onboarding\",\"status\":{\"id\":1,\"name\":\"New\"},\"assigned_to\":{\"id\":2,\"name\":\"Alice\"},\"updated_on\":\"2024-01-01\"}],\"total_count\":1,\"offset\":0,\"limit\":25}"))
 	})
 
 	return httptest.NewServer(handler)

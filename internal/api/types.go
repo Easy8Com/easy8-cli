@@ -67,3 +67,56 @@ type SearchResponse struct {
 	Offset     int            `json:"offset"`
 	Limit      int            `json:"limit"`
 }
+
+type Tracker struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type TrackerListResponse struct {
+	Trackers []Tracker `json:"trackers"`
+}
+
+type IssueStatus struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type IssueStatusListResponse struct {
+	IssueStatuses []IssueStatus `json:"issue_statuses"`
+}
+
+type IssuePriority struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type IssuePriorityListResponse struct {
+	IssuePriorities []IssuePriority `json:"issue_priorities"`
+}
+
+type User struct {
+	ID        int    `json:"id"`
+	Login     string `json:"login"`
+	Firstname string `json:"firstname"`
+	Lastname  string `json:"lastname"`
+}
+
+type UserListResponse struct {
+	Users      []User `json:"users"`
+	TotalCount int    `json:"total_count"`
+	Offset     int    `json:"offset"`
+	Limit      int    `json:"limit"`
+}
+
+type Project struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type ProjectListResponse struct {
+	Projects   []Project `json:"projects"`
+	TotalCount int       `json:"total_count"`
+	Offset     int       `json:"offset"`
+	Limit      int       `json:"limit"`
+}

@@ -181,35 +181,92 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 	fs := flag.NewFlagSet("issue search", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	query := fs.String("q", "", "Search query (required)")
-	openIssues := fs.Bool("open", false, "Only open issues")
-	scope := fs.Int("scope", 0, "Project scope (project ID)")
-	issuesOnly := fs.Bool("issues", true, "Search issues")
+	query := fs.String("q", "", "Search query")
+	limit := fs.Int("limit", 25, "Limit (max 100)")
+	offset := fs.Int("offset", 0, "Offset")
+	sort := fs.String("sort", "", "Sort expression")
+	include := fs.String("include", "", "Include fields (comma-separated)")
+	var assigneeID optionalInt
+	var statusID optionalInt
+	var priorityID optionalInt
+	var taskTypeID optionalInt
+	var projectID optionalInt
+	fs.Var(&assigneeID, "assignee-id", "Assignee user ID")
+	fs.Var(&statusID, "status-id", "Status ID")
+	fs.Var(&priorityID, "priority-id", "Priority ID")
+	fs.Var(&taskTypeID, "task-type-id", "Task type (tracker) ID")
+	fs.Var(&projectID, "project-id", "Project ID")
+	var dueDate string
+	var subject string
+	var assignee string
+	var status string
+	var priority string
+	var taskType string
+	var project string
+	fs.StringVar(&dueDate, "due-date", "", "Due date (YYYY-MM-DD)")
+	fs.StringVar(&subject, "subject", "", "Subject filter")
+	fs.StringVar(&assignee, "assignee", "", "Assignee login or name")
+	fs.StringVar(&status, "status", "", "Status name")
+	fs.StringVar(&priority, "priority", "", "Priority name")
+	fs.StringVar(&taskType, "task-type", "", "Task type (tracker) name")
+	fs.StringVar(&project, "project", "", "Project name")
 	jsonOut := fs.Bool("json", false, "JSON output")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	if err := requireString("q", *query); err != nil {
+	resolvedAssigneeID, err := resolveAssigneeID(context.Background(), client, assigneeID, assignee)
+	if err != nil {
+		return usageError(err)
+	}
+	resolvedStatusID, err := resolveStatusID(context.Background(), client, statusID, status)
+	if err != nil {
+		return usageError(err)
+	}
+	resolvedPriorityID, err := resolvePriorityID(context.Background(), client, priorityID, priority)
+	if err != nil {
+		return usageError(err)
+	}
+	resolvedTaskTypeID, err := resolveTaskTypeID(context.Background(), client, taskTypeID, taskType)
+	if err != nil {
+		return usageError(err)
+	}
+	resolvedProjectID, err := resolveProjectID(context.Background(), client, projectID, project)
+	if err != nil {
 		return usageError(err)
 	}
 
-	params := api.SearchParams{
-		Query:      *query,
-		OpenIssues: *openIssues,
-		Scope:      *scope,
-		IssuesOnly: *issuesOnly,
+	queryValue := strings.TrimSpace(*query)
+	if queryValue == "" && resolvedAssigneeID == 0 && resolvedStatusID == 0 && resolvedPriorityID == 0 && resolvedTaskTypeID == 0 && resolvedProjectID == 0 && strings.TrimSpace(dueDate) == "" && strings.TrimSpace(subject) == "" {
+		return usageError(fmt.Errorf("at least one filter is required (e.g. --q, --status, --assignee)"))
 	}
 
-	resp, err := client.Search(context.Background(), params)
+	params := api.IssueListParams{
+		Limit:      *limit,
+		Offset:     *offset,
+		Sort:       strings.TrimSpace(*sort),
+		Query:      queryValue,
+		DueDate:    strings.TrimSpace(dueDate),
+		Subject:    strings.TrimSpace(subject),
+		AssigneeID: resolvedAssigneeID,
+		StatusID:   resolvedStatusID,
+		PriorityID: resolvedPriorityID,
+		TaskTypeID: resolvedTaskTypeID,
+		ProjectID:  resolvedProjectID,
+	}
+	if strings.TrimSpace(*include) != "" {
+		params.Include = splitComma(*include)
+	}
+
+	resp, err := client.ListIssues(context.Background(), params)
 	if err != nil {
 		return apiError(err)
 	}
 	if *jsonOut {
 		return outputJSON(resp)
 	}
-	return outputSearch(resp.Results)
+	return outputIssues(resp.Issues)
 }
 
 func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
@@ -324,7 +381,9 @@ func printIssueUsage() {
 		"",
 		"Examples:",
 		"  easy8 issue list --limit 10",
-		"  easy8 issue search --q \"onboarding\" --open",
+		"  easy8 issue search --q \"onboarding\"",
+		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
+		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
 		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2",
 		"  easy8 issue update --id 123 --status-id 5",
 	}
@@ -394,4 +453,167 @@ func apiError(err error) int {
 		fmt.Fprintln(os.Stderr, "error:", err)
 	}
 	return 1
+}
+
+type nameID struct {
+	ID   int
+	Name string
+}
+
+func resolveAssigneeID(ctx context.Context, client *api.Client, id optionalInt, name string) (int, error) {
+	if strings.TrimSpace(name) == "" {
+		if id.set {
+			return id.value, nil
+		}
+		return 0, nil
+	}
+
+	users, err := client.ListUsers(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	needle := normalizeName(name)
+	var matches []api.User
+	for _, user := range users {
+		if matchesUser(user, needle) {
+			matches = append(matches, user)
+		}
+	}
+
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("assignee not found: %s", name)
+	}
+	if len(matches) > 1 {
+		return 0, fmt.Errorf("assignee matches multiple users: %s", name)
+	}
+	match := matches[0]
+	if id.set && id.value != match.ID {
+		return 0, fmt.Errorf("assignee-id does not match assignee name")
+	}
+	return match.ID, nil
+}
+
+func resolveStatusID(ctx context.Context, client *api.Client, id optionalInt, name string) (int, error) {
+	if strings.TrimSpace(name) == "" {
+		if id.set {
+			return id.value, nil
+		}
+		return 0, nil
+	}
+	items, err := client.ListIssueStatuses(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return resolveNameID(id, name, toNameIDsStatus(items), "status")
+}
+
+func resolvePriorityID(ctx context.Context, client *api.Client, id optionalInt, name string) (int, error) {
+	if strings.TrimSpace(name) == "" {
+		if id.set {
+			return id.value, nil
+		}
+		return 0, nil
+	}
+	items, err := client.ListIssuePriorities(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return resolveNameID(id, name, toNameIDsPriority(items), "priority")
+}
+
+func resolveTaskTypeID(ctx context.Context, client *api.Client, id optionalInt, name string) (int, error) {
+	if strings.TrimSpace(name) == "" {
+		if id.set {
+			return id.value, nil
+		}
+		return 0, nil
+	}
+	items, err := client.ListTrackers(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return resolveNameID(id, name, toNameIDsTracker(items), "task-type")
+}
+
+func resolveProjectID(ctx context.Context, client *api.Client, id optionalInt, name string) (int, error) {
+	if strings.TrimSpace(name) == "" {
+		if id.set {
+			return id.value, nil
+		}
+		return 0, nil
+	}
+	items, err := client.ListProjects(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return resolveNameID(id, name, toNameIDsProject(items), "project")
+}
+
+func resolveNameID(id optionalInt, name string, items []nameID, label string) (int, error) {
+	needle := normalizeName(name)
+	var matches []nameID
+	for _, item := range items {
+		if normalizeName(item.Name) == needle {
+			matches = append(matches, item)
+		}
+	}
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("%s not found: %s", label, name)
+	}
+	if len(matches) > 1 {
+		return 0, fmt.Errorf("%s matches multiple entries: %s", label, name)
+	}
+	match := matches[0]
+	if id.set && id.value != match.ID {
+		return 0, fmt.Errorf("%s-id does not match %s name", label, label)
+	}
+	return match.ID, nil
+}
+
+func normalizeName(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func matchesUser(user api.User, needle string) bool {
+	if normalizeName(user.Login) == needle {
+		return true
+	}
+	full := strings.TrimSpace(user.Firstname + " " + user.Lastname)
+	if normalizeName(full) == needle {
+		return true
+	}
+	return false
+}
+
+func toNameIDsStatus(items []api.IssueStatus) []nameID {
+	result := make([]nameID, 0, len(items))
+	for _, item := range items {
+		result = append(result, nameID{ID: item.ID, Name: item.Name})
+	}
+	return result
+}
+
+func toNameIDsPriority(items []api.IssuePriority) []nameID {
+	result := make([]nameID, 0, len(items))
+	for _, item := range items {
+		result = append(result, nameID{ID: item.ID, Name: item.Name})
+	}
+	return result
+}
+
+func toNameIDsTracker(items []api.Tracker) []nameID {
+	result := make([]nameID, 0, len(items))
+	for _, item := range items {
+		result = append(result, nameID{ID: item.ID, Name: item.Name})
+	}
+	return result
+}
+
+func toNameIDsProject(items []api.Project) []nameID {
+	result := make([]nameID, 0, len(items))
+	for _, item := range items {
+		result = append(result, nameID{ID: item.ID, Name: item.Name})
+	}
+	return result
 }
