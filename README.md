@@ -38,17 +38,6 @@ export EASY8_BASE_URL="https://demo.easysoftware.com"
 export EASY8_API_KEY="<your-key>"
 ```
 
-Optional defaults (used for `issue create`):
-
-```bash
-export EASY8_DEFAULT_PROJECT_ID="1"
-export EASY8_DEFAULT_TRACKER_ID="1"
-export EASY8_DEFAULT_STATUS_ID="1"
-export EASY8_DEFAULT_PRIORITY_ID="1"
-export EASY8_DEFAULT_AUTHOR_ID="1"
-export EASY8_DEFAULT_ASSIGNED_TO_ID="1"
-```
-
 Optional config file (env overrides config):
 
 `~/.config/easy8/config.json`
