@@ -1,17 +1,21 @@
 # easy8-cli
+
 Small Go CLI for Easy8. Current scope: Issues and Product Backlog Items (PBIs).
 
 ## Goals
+
 - Create, show, list, search, and update issues.
 - List, show, and update product backlog items.
 - Provide JSON output for automation and skills.
 - Stay small, fast, and easy to extend.
 
 ## Requirements
+
 - Go 1.22+
 - Easy8 API key
 
 ## Install
+
 Build locally:
 
 ```bash
@@ -25,6 +29,7 @@ go build -ldflags "-X easy8-cli/internal/cli.Version=1.0.0" -o easy8 ./cmd/easy8
 ```
 
 ## Run
+
 Run the compiled binary:
 
 ```bash
@@ -38,6 +43,7 @@ go run ./cmd/easy8 issue list --limit 10
 ```
 
 ## Configuration
+
 Environment variables:
 
 ```bash
@@ -85,6 +91,40 @@ Optional config file (env overrides config):
 
 ## Usage
 
+### Agent skill (source of truth)
+
+This repository contains the canonical skill file for agent-driven task/PBI fetches:
+
+```text
+skills/easy8-cli/SKILL.md
+```
+
+The skill is agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.
+
+In your current local setup, copy this file into your OpenCode workspace skill path:
+
+```bash
+cp skills/easy8-cli/SKILL.md /home/petr/_projects/devel/.opencode/skills/easy8-cli/SKILL.md
+```
+
+Examples of prompts:
+
+```text
+oprav ukol #1234
+oprav pbi #42
+najdi pbi onboarding
+```
+
+Typical command mapping used by the skill:
+
+```bash
+easy8 issue show --id 1234 --json
+easy8 pbi show --id 42 --json
+easy8 pbi list --q "onboarding" --json
+```
+
+If the copied skill is not visible immediately, restart the OpenCode session so the skill index reloads.
+
 ### Show issue detail
 
 ```bash
@@ -118,6 +158,7 @@ easy8 issue search --q "petr" --assignee "Alice Doe" --status "New" --priority "
 ```
 
 Notes:
+
 - For assignee, status, priority, task type, and project you can use either name or ID.
 - Name lookups are resolved via `/users.json`, `/issue_statuses.json`, `/enumerations/issue_priorities.json`, `/trackers.json`, `/projects.json`.
 
@@ -207,6 +248,7 @@ Integration tests use the `//go:build integration` build tag and skip
 automatically when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Roadmap
+
 - Additional entities (projects, users, time, etc.)
 - Config profiles
 - Convenience commands (quick create, templates)
