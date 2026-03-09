@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,7 +35,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	applyEnv(&cfg)
+	warnings := applyEnv(&cfg)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "config warning: %s\n", w)
+	}
 	return cfg, nil
 }
 
@@ -65,7 +69,7 @@ func configPath() (string, error) {
 	return filepath.Join(home, ".config", "easy8", "config.json"), nil
 }
 
-func applyEnv(cfg *Config) {
+func applyEnv(cfg *Config) []string {
 	if base := os.Getenv("EASY8_BASE_URL"); base != "" {
 		cfg.BaseURL = base
 	}
@@ -73,21 +77,24 @@ func applyEnv(cfg *Config) {
 		cfg.APIKey = key
 	}
 
-	setIntEnv(&cfg.Defaults.ProjectID, "EASY8_DEFAULT_PROJECT_ID")
-	setIntEnv(&cfg.Defaults.TrackerID, "EASY8_DEFAULT_TRACKER_ID")
-	setIntEnv(&cfg.Defaults.StatusID, "EASY8_DEFAULT_STATUS_ID")
-	setIntEnv(&cfg.Defaults.PriorityID, "EASY8_DEFAULT_PRIORITY_ID")
-	setIntEnv(&cfg.Defaults.AuthorID, "EASY8_DEFAULT_AUTHOR_ID")
-	setIntEnv(&cfg.Defaults.AssignedToID, "EASY8_DEFAULT_ASSIGNED_TO_ID")
+	var warnings []string
+	setIntEnv(&cfg.Defaults.ProjectID, "EASY8_DEFAULT_PROJECT_ID", &warnings)
+	setIntEnv(&cfg.Defaults.TrackerID, "EASY8_DEFAULT_TRACKER_ID", &warnings)
+	setIntEnv(&cfg.Defaults.StatusID, "EASY8_DEFAULT_STATUS_ID", &warnings)
+	setIntEnv(&cfg.Defaults.PriorityID, "EASY8_DEFAULT_PRIORITY_ID", &warnings)
+	setIntEnv(&cfg.Defaults.AuthorID, "EASY8_DEFAULT_AUTHOR_ID", &warnings)
+	setIntEnv(&cfg.Defaults.AssignedToID, "EASY8_DEFAULT_ASSIGNED_TO_ID", &warnings)
+	return warnings
 }
 
-func setIntEnv(target *int, key string) {
+func setIntEnv(target *int, key string, warnings *[]string) {
 	value := os.Getenv(key)
 	if value == "" {
 		return
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("invalid integer for %s: %q", key, value))
 		return
 	}
 	*target = parsed

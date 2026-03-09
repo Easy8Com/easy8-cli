@@ -14,6 +14,7 @@ type IssueListParams struct {
 	Sort       string
 	Query      string
 	Include    []string
+	IssueIDs   []int
 	AssigneeID int
 	DueDate    string
 	StatusID   int
@@ -68,6 +69,14 @@ func (c *Client) ListIssues(ctx context.Context, params IssueListParams) (IssueL
 		query.Set("project_id", strconv.Itoa(params.ProjectID))
 		hasFilter = true
 	}
+	if len(params.IssueIDs) > 0 {
+		ids := make([]string, len(params.IssueIDs))
+		for i, id := range params.IssueIDs {
+			ids[i] = strconv.Itoa(id)
+		}
+		query.Set("issue_id", strings.Join(ids, "|"))
+		hasFilter = true
+	}
 	if hasFilter {
 		query.Set("set_filter", "1")
 	}
@@ -78,6 +87,23 @@ func (c *Client) ListIssues(ctx context.Context, params IssueListParams) (IssueL
 	var resp IssueListResponse
 	if err := c.doJSON(ctx, "GET", "/issues.json", query, nil, &resp); err != nil {
 		return IssueListResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) GetIssue(ctx context.Context, id int, include []string) (IssueResponse, error) {
+	if id == 0 {
+		return IssueResponse{}, fmt.Errorf("missing issue id")
+	}
+	path := fmt.Sprintf("/issues/%d.json", id)
+	var query url.Values
+	if len(include) > 0 {
+		query = url.Values{}
+		query.Set("include", strings.Join(include, ","))
+	}
+	var resp IssueResponse
+	if err := c.doJSON(ctx, "GET", path, query, nil, &resp); err != nil {
+		return IssueResponse{}, err
 	}
 	return resp, nil
 }

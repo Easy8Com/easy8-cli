@@ -52,22 +52,6 @@ type IssueListResponse struct {
 	Limit      int     `json:"limit"`
 }
 
-type SearchResult struct {
-	ID          int    `json:"id"`
-	Type        string `json:"type"`
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-	Datetime    string `json:"datetime"`
-}
-
-type SearchResponse struct {
-	Results    []SearchResult `json:"results"`
-	TotalCount int            `json:"total_count"`
-	Offset     int            `json:"offset"`
-	Limit      int            `json:"limit"`
-}
-
 type Tracker struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`

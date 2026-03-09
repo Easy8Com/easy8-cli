@@ -6,6 +6,8 @@ import (
 	"strconv"
 )
 
+// Enumerations -- no pagination, server returns full list in one call.
+
 func (c *Client) ListTrackers(ctx context.Context) ([]Tracker, error) {
 	var resp TrackerListResponse
 	if err := c.doJSON(ctx, "GET", "/trackers.json", nil, nil, &resp); err != nil {
@@ -30,6 +32,8 @@ func (c *Client) ListIssuePriorities(ctx context.Context) ([]IssuePriority, erro
 	return resp.IssuePriorities, nil
 }
 
+// Paginated resources -- require set_filter=1 for easy_query endpoints.
+
 func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 	return listUsersPaged(ctx, c)
 }
@@ -44,6 +48,7 @@ func listUsersPaged(ctx context.Context, c *Client) ([]User, error) {
 	var all []User
 	for {
 		query := url.Values{}
+		query.Set("set_filter", "1")
 		query.Set("limit", strconv.Itoa(limit))
 		query.Set("offset", strconv.Itoa(offset))
 		var resp UserListResponse
@@ -51,8 +56,11 @@ func listUsersPaged(ctx context.Context, c *Client) ([]User, error) {
 			return nil, err
 		}
 		all = append(all, resp.Users...)
-		offset += resp.Limit
-		if offset >= resp.TotalCount || resp.Limit == 0 {
+		if len(resp.Users) == 0 || resp.TotalCount == 0 {
+			break
+		}
+		offset += len(resp.Users)
+		if offset >= resp.TotalCount {
 			break
 		}
 	}
@@ -65,6 +73,7 @@ func listProjectsPaged(ctx context.Context, c *Client) ([]Project, error) {
 	var all []Project
 	for {
 		query := url.Values{}
+		query.Set("set_filter", "1")
 		query.Set("limit", strconv.Itoa(limit))
 		query.Set("offset", strconv.Itoa(offset))
 		var resp ProjectListResponse
@@ -72,8 +81,11 @@ func listProjectsPaged(ctx context.Context, c *Client) ([]Project, error) {
 			return nil, err
 		}
 		all = append(all, resp.Projects...)
-		offset += resp.Limit
-		if offset >= resp.TotalCount || resp.Limit == 0 {
+		if len(resp.Projects) == 0 || resp.TotalCount == 0 {
+			break
+		}
+		offset += len(resp.Projects)
+		if offset >= resp.TotalCount {
 			break
 		}
 	}

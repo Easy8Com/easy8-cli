@@ -5,8 +5,7 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 
 ## Project intent
 - Provide a small, fast Go CLI for Easy8.
-- Current scope: Issues (tasks) only.
-- Supported actions: create, list, search, update.
+- Current scope: Issues (tasks) and Product Backlog Items (PBIs).
 - Design for future entities without breaking CLI UX.
 
 ## API basics
@@ -14,12 +13,28 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - Authentication:
   - Preferred: header api key `X-Redmine-API-Key`.
   - Optional fallback: query parameter `key`.
+- Endpoints that use easy_query (issues, users, projects) require `set_filter=1`.
+- Enumeration endpoints (trackers, statuses, priorities) return full lists without pagination.
 
 ## Endpoints in scope
+
+### Issues
 - `GET /issues.json` list issues
+- `GET /issues/{id}.json` show issue detail
 - `POST /issues.json` create issue
 - `PUT /issues/{id}.json` update issue
-- `GET /search.json` fulltext search
+
+### Product Backlog Items (PBIs)
+- `GET /easy_product_backlog_items.json` list PBIs (requires `set_filter=1`)
+- `GET /easy_product_backlog_items/{id}.json` show PBI detail
+- `PUT /easy_product_backlog_items/{id}.json` update PBI (returns 204 No Content)
+
+### Lookup endpoints (used for name-to-ID resolution)
+- `GET /trackers.json` -- no pagination
+- `GET /issue_statuses.json` -- no pagination
+- `GET /enumerations/issue_priorities.json` -- no pagination
+- `GET /users.json` -- paginated, requires `set_filter=1`
+- `GET /projects.json` -- paginated, requires `set_filter=1`
 
 ## Create issue required fields (per swagger)
 - `subject`
@@ -32,9 +47,14 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 
 ## CLI command map
 - `easy8 issue create`
+- `easy8 issue show`
 - `easy8 issue list`
 - `easy8 issue search`
 - `easy8 issue update`
+- `easy8 pbi list`
+- `easy8 pbi show`
+- `easy8 pbi update`
+- `easy8 version`
 
 ## Configuration
 - Environment variables (recommended):
@@ -43,21 +63,38 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   - Optional defaults: `EASY8_DEFAULT_PROJECT_ID`, `EASY8_DEFAULT_TRACKER_ID`,
     `EASY8_DEFAULT_STATUS_ID`, `EASY8_DEFAULT_PRIORITY_ID`,
     `EASY8_DEFAULT_AUTHOR_ID`, `EASY8_DEFAULT_ASSIGNED_TO_ID`
+- Invalid integer env vars produce a warning on stderr (not silently ignored).
 - Optional config file:
   - `~/.config/easy8/config.json`
   - Env vars override config values.
+- For local development, use `.env` file with `source ./setup_env.sh`.
 
 ## Output format
-- Human-readable table by default.
+- Human-readable table by default (list, search, create, update).
+- Key-value detail format for `issue show` and `pbi show`.
 - `--json` flag for machine-readable output (skills integration).
+
+## Validation
+- `--done-ratio` must be between 0 and 100.
 
 ## Error handling
 - Non-2xx responses must include status code and error body in stderr.
 - Exit non-zero on API errors.
+- Invalid config env vars produce a warning on stderr.
 
 ## Testing
 - Every code change must be covered by tests; aim for line-level coverage.
-- Always run `go test ./...` after any change.
+- Unit tests: `go test ./...`
+- Integration tests (require running Easy8 server):
+  ```
+  source ./setup_env.sh && go test -tags integration -v -timeout 600s ./internal/api/
+  ```
+- Integration tests use build tag `//go:build integration` and skip automatically
+  when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
+
+## Version
+- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=1.0.0" -o easy8 ./cmd/easy8`
+- Defaults to `dev` when not set.
 
 ## Extension guidance
 - Keep API client in a small internal package (e.g., `internal/api`).

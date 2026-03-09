@@ -49,8 +49,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, query url.Valu
 		return fmt.Errorf("missing API key")
 	}
 
-	baseURL := strings.TrimRight(c.BaseURL, "/")
-	urlValue := baseURL + path
+	urlValue := c.BaseURL + path
 	if query != nil {
 		encoded := query.Encode()
 		if encoded != "" {

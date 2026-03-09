@@ -64,6 +64,27 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestInvalidIntEnvWarning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_DEFAULT_PROJECT_ID", "abc")
+	t.Setenv("EASY8_DEFAULT_TRACKER_ID", "")
+
+	var cfg Config
+	warnings := applyEnv(&cfg)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if warnings[0] != `invalid integer for EASY8_DEFAULT_PROJECT_ID: "abc"` {
+		t.Fatalf("unexpected warning: %s", warnings[0])
+	}
+	if cfg.Defaults.ProjectID != 0 {
+		t.Fatalf("ProjectID should be 0, got %d", cfg.Defaults.ProjectID)
+	}
+}
+
 func TestLoadConfigFileMerge(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

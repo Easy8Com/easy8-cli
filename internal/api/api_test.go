@@ -81,6 +81,33 @@ func TestListIssuesBuildsQuery(t *testing.T) {
 	}
 }
 
+func TestListIssuesByIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("issue_id") != "100|200|300" {
+			t.Fatalf("issue_id = %s", q.Get("issue_id"))
+		}
+		if q.Get("set_filter") != "1" {
+			t.Fatalf("set_filter = %s", q.Get("set_filter"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issues":[{"id":100,"subject":"A","status":{"id":1,"name":"New"}},{"id":200,"subject":"B","status":{"id":2,"name":"Done"}},{"id":300,"subject":"C","status":{"id":1,"name":"New"}}],"total_count":3,"offset":0,"limit":25}`))
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	resp, err := client.ListIssues(context.Background(), IssueListParams{
+		IssueIDs: []int{100, 200, 300},
+		Limit:    3,
+	})
+	if err != nil {
+		t.Fatalf("ListIssues error: %v", err)
+	}
+	if len(resp.Issues) != 3 {
+		t.Fatalf("expected 3 issues, got %d", len(resp.Issues))
+	}
+}
+
 func TestCreateIssueSendsBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -123,33 +150,63 @@ func TestUpdateIssueMissingID(t *testing.T) {
 	}
 }
 
-func TestSearchBuildsQuery(t *testing.T) {
+func TestGetIssue(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		if query.Get("q") != "hello" {
-			t.Fatalf("q = %s", query.Get("q"))
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s", r.Method)
 		}
-		if query.Get("open_issues") != "1" {
-			t.Fatalf("open_issues = %s", query.Get("open_issues"))
+		if r.URL.Path != "/issues/42.json" {
+			t.Fatalf("path = %s", r.URL.Path)
 		}
-		if query.Get("scope") != "7" {
-			t.Fatalf("scope = %s", query.Get("scope"))
-		}
-		if query.Get("issues") != "1" {
-			t.Fatalf("issues = %s", query.Get("issues"))
+		if r.URL.Query().Get("include") != "journals,attachments" {
+			t.Fatalf("include = %s", r.URL.Query().Get("include"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("{\"results\":[{\"id\":5,\"type\":\"issue\",\"title\":\"Hello\",\"url\":\"https://example.com\",\"description\":\"\",\"datetime\":\"2024-01-01\"}],\"total_count\":1,\"offset\":0,\"limit\":25}"))
+		_, _ = w.Write([]byte(`{"issue":{"id":42,"subject":"Test issue","description":"desc","status":{"id":1,"name":"New"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"priority":{"id":4,"name":"Normal"},"author":{"id":51,"name":"Petr"},"assigned_to":{"id":51,"name":"Petr"},"done_ratio":50,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
 	}))
 	defer server.Close()
 
 	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
-	resp, err := client.Search(context.Background(), SearchParams{Query: "hello", OpenIssues: true, Scope: 7, IssuesOnly: true})
+	resp, err := client.GetIssue(context.Background(), 42, []string{"journals", "attachments"})
 	if err != nil {
-		t.Fatalf("Search error: %v", err)
+		t.Fatalf("GetIssue error: %v", err)
 	}
-	if len(resp.Results) != 1 || resp.Results[0].ID != 5 {
-		t.Fatalf("unexpected results: %+v", resp.Results)
+	if resp.Issue.ID != 42 {
+		t.Fatalf("issue id = %d", resp.Issue.ID)
+	}
+	if resp.Issue.Subject != "Test issue" {
+		t.Fatalf("subject = %q", resp.Issue.Subject)
+	}
+	if resp.Issue.DoneRatio != 50 {
+		t.Fatalf("done_ratio = %d", resp.Issue.DoneRatio)
+	}
+}
+
+func TestGetIssueNoInclude(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("include") != "" {
+			t.Fatalf("unexpected include param: %s", r.URL.Query().Get("include"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issue":{"id":10,"subject":"Simple"}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	resp, err := client.GetIssue(context.Background(), 10, nil)
+	if err != nil {
+		t.Fatalf("GetIssue error: %v", err)
+	}
+	if resp.Issue.ID != 10 {
+		t.Fatalf("issue id = %d", resp.Issue.ID)
+	}
+}
+
+func TestGetIssueMissingID(t *testing.T) {
+	client := &Client{BaseURL: "https://example.com", APIKey: "key", HTTP: http.DefaultClient}
+	_, err := client.GetIssue(context.Background(), 0, nil)
+	if err == nil {
+		t.Fatalf("expected error")
 	}
 }
 
@@ -199,6 +256,9 @@ func TestLookupEndpoints(t *testing.T) {
 			_, _ = w.Write([]byte("{\"issue_priorities\":[{\"id\":3,\"name\":\"High\"}]}"))
 		case "/users.json":
 			q := r.URL.Query()
+			if q.Get("set_filter") != "1" {
+				t.Fatalf("users: set_filter = %s", q.Get("set_filter"))
+			}
 			if q.Get("offset") == "0" {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte("{\"users\":[{\"id\":10,\"login\":\"alice\",\"firstname\":\"Alice\",\"lastname\":\"Doe\"}],\"total_count\":2,\"offset\":0,\"limit\":1}"))
@@ -208,6 +268,9 @@ func TestLookupEndpoints(t *testing.T) {
 			_, _ = w.Write([]byte("{\"users\":[{\"id\":11,\"login\":\"bob\",\"firstname\":\"Bob\",\"lastname\":\"Smith\"}],\"total_count\":2,\"offset\":1,\"limit\":1}"))
 		case "/projects.json":
 			q := r.URL.Query()
+			if q.Get("set_filter") != "1" {
+				t.Fatalf("projects: set_filter = %s", q.Get("set_filter"))
+			}
 			if q.Get("offset") == "0" {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte("{\"projects\":[{\"id\":20,\"name\":\"Alpha\"}],\"total_count\":2,\"offset\":0,\"limit\":1}"))

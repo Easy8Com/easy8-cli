@@ -13,6 +13,9 @@ import (
 	"easy8-cli/internal/config"
 )
 
+// Version is set at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
+var Version = "dev"
+
 func Run(args []string) int {
 	cfg, err := config.Load()
 	if err != nil {
@@ -28,6 +31,11 @@ func Run(args []string) int {
 	switch args[0] {
 	case "issue":
 		return runIssue(args[1:], cfg)
+	case "pbi":
+		return runPBI(args[1:], cfg)
+	case "version", "--version", "-v":
+		fmt.Println(Version)
+		return 0
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -49,6 +57,8 @@ func runIssue(args []string, cfg config.Config) int {
 	switch args[0] {
 	case "create":
 		return runIssueCreate(args[1:], cfg, client)
+	case "show":
+		return runIssueShow(args[1:], cfg, client)
 	case "list":
 		return runIssueList(args[1:], cfg, client)
 	case "search":
@@ -128,6 +138,9 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		input.DueDate = stringPtr(*dueDate)
 	}
 	if doneRatio.set {
+		if doneRatio.value < 0 || doneRatio.value > 100 {
+			return usageError(fmt.Errorf("--done-ratio must be between 0 and 100"))
+		}
 		input.DoneRatio = intPtr(doneRatio.value)
 	}
 
@@ -140,6 +153,38 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		return outputJSON(resp)
 	}
 	return outputIssues([]api.Issue{resp.Issue})
+}
+
+func runIssueShow(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("issue show", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	id := fs.Int("id", 0, "Issue ID (required)")
+	include := fs.String("include", "", "Include fields (comma-separated, e.g. journals,attachments)")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireInt("id", *id); err != nil {
+		return usageError(err)
+	}
+
+	var includes []string
+	if strings.TrimSpace(*include) != "" {
+		includes = splitComma(*include)
+	}
+
+	resp, err := client.GetIssue(context.Background(), *id, includes)
+	if err != nil {
+		return apiError(err)
+	}
+
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputIssueDetail(resp.Issue)
 }
 
 func runIssueList(args []string, cfg config.Config, client *api.Client) int {
@@ -312,6 +357,9 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 		input.AssignedToID = intPtr(assignedToID.value)
 	}
 	if doneRatio.set {
+		if doneRatio.value < 0 || doneRatio.value > 100 {
+			return usageError(fmt.Errorf("--done-ratio must be between 0 and 100"))
+		}
 		input.DoneRatio = intPtr(doneRatio.value)
 	}
 	if strings.TrimSpace(*notes) != "" {
@@ -326,6 +374,156 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 		return outputJSON(resp)
 	}
 	return outputIssues([]api.Issue{resp.Issue})
+}
+
+// --- PBI commands ---
+
+func runPBI(args []string, cfg config.Config) int {
+	if len(args) == 0 {
+		printPBIUsage()
+		return 2
+	}
+
+	client := api.NewClient(cfg)
+
+	switch args[0] {
+	case "list":
+		return runPBIList(args[1:], cfg, client)
+	case "show":
+		return runPBIShow(args[1:], cfg, client)
+	case "update":
+		return runPBIUpdate(args[1:], cfg, client)
+	case "help", "-h", "--help":
+		printPBIUsage()
+		return 0
+	default:
+		fmt.Fprintln(os.Stderr, "unknown pbi command:", args[0])
+		printPBIUsage()
+		return 2
+	}
+}
+
+func runPBIList(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("pbi list", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	limit := fs.Int("limit", 25, "Max items")
+	offset := fs.Int("offset", 0, "Offset")
+	sort := fs.String("sort", "", "Sort (e.g. updated_at:desc)")
+	query := fs.String("q", "", "Fulltext search")
+	status := fs.String("status", "", "Filter by status (to_do, realization, done, deleted)")
+	authorID := fs.Int("author-id", 0, "Filter by author ID")
+	boardID := fs.Int("board-id", 0, "Filter by board ID")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	params := api.PBIListParams{
+		Limit:    *limit,
+		Offset:   *offset,
+		Sort:     *sort,
+		Query:    *query,
+		Status:   *status,
+		AuthorID: *authorID,
+		BoardID:  *boardID,
+	}
+
+	resp, err := client.ListPBIs(context.Background(), params)
+	if err != nil {
+		return apiError(err)
+	}
+
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputPBIs(resp.PBIs)
+}
+
+func runPBIShow(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("pbi show", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	id := fs.Int("id", 0, "PBI ID (required)")
+	jsonOut := fs.Bool("json", false, "JSON output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireInt("id", *id); err != nil {
+		return usageError(err)
+	}
+
+	resp, err := client.GetPBI(context.Background(), *id)
+	if err != nil {
+		return apiError(err)
+	}
+
+	// Fetch full issue details if PBI has linked issues
+	var issues []api.Issue
+	if len(resp.PBI.Issues) > 0 {
+		ids := make([]int, len(resp.PBI.Issues))
+		for i, issue := range resp.PBI.Issues {
+			ids[i] = issue.ID
+		}
+		issueResp, err := client.ListIssues(context.Background(), api.IssueListParams{
+			IssueIDs: ids,
+			Limit:    len(ids),
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not fetch issue details: %v\n", err)
+		} else {
+			issues = issueResp.Issues
+		}
+	}
+
+	if *jsonOut {
+		return outputJSON(resp)
+	}
+	return outputPBIDetail(resp.PBI, issues)
+}
+
+func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
+	fs := flag.NewFlagSet("pbi update", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	id := fs.Int("id", 0, "PBI ID (required)")
+	name := fs.String("name", "", "New name")
+	description := fs.String("description", "", "New description")
+	status := fs.String("status", "", "New status (to_do, realization, done, deleted)")
+	estimate := fs.String("estimate", "", "New estimate")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := requireInt("id", *id); err != nil {
+		return usageError(err)
+	}
+
+	var input api.PBIInput
+	if strings.TrimSpace(*name) != "" {
+		input.Name = name
+	}
+	if strings.TrimSpace(*description) != "" {
+		input.Description = description
+	}
+	if strings.TrimSpace(*status) != "" {
+		input.Status = status
+	}
+	if strings.TrimSpace(*estimate) != "" {
+		input.Estimate = estimate
+	}
+
+	err := client.UpdatePBI(context.Background(), *id, input)
+	if err != nil {
+		return apiError(err)
+	}
+
+	fmt.Fprintf(os.Stdout, "PBI #%d updated.\n", *id)
+	return 0
 }
 
 func usageError(err error) int {
@@ -355,14 +553,21 @@ func printUsage() {
 		"",
 		"Usage:",
 		"  easy8 issue <command> [flags]",
+		"  easy8 pbi <command> [flags]",
+		"  easy8 version",
 		"",
 		"Commands:",
 		"  issue create   Create a new issue",
+		"  issue show     Show issue detail",
 		"  issue list     List issues",
 		"  issue search   Fulltext search",
 		"  issue update   Update an issue",
+		"  pbi list       List product backlog items",
+		"  pbi show       Show PBI detail",
+		"  pbi update     Update a PBI",
+		"  version        Print version",
 		"",
-		"Use 'easy8 issue --help' for details.",
+		"Use 'easy8 issue --help' or 'easy8 pbi --help' for details.",
 	}
 	for _, line := range lines {
 		fmt.Fprintln(os.Stderr, line)
@@ -375,17 +580,43 @@ func printIssueUsage() {
 		"",
 		"Usage:",
 		"  easy8 issue create [flags]",
+		"  easy8 issue show [flags]",
 		"  easy8 issue list [flags]",
 		"  easy8 issue search [flags]",
 		"  easy8 issue update [flags]",
 		"",
 		"Examples:",
+		"  easy8 issue show --id 123",
+		"  easy8 issue show --id 123 --include journals,attachments --json",
 		"  easy8 issue list --limit 10",
 		"  easy8 issue search --q \"onboarding\"",
 		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
 		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
 		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2",
 		"  easy8 issue update --id 123 --status-id 5",
+	}
+	for _, line := range lines {
+		fmt.Fprintln(os.Stderr, line)
+	}
+}
+
+func printPBIUsage() {
+	lines := []string{
+		"easy8 pbi",
+		"",
+		"Usage:",
+		"  easy8 pbi list [flags]",
+		"  easy8 pbi show [flags]",
+		"  easy8 pbi update [flags]",
+		"",
+		"Examples:",
+		"  easy8 pbi list --limit 10",
+		"  easy8 pbi list --status to_do --board-id 17",
+		"  easy8 pbi list --q \"design\" --author-id 51",
+		"  easy8 pbi show --id 42",
+		"  easy8 pbi show --id 42 --json",
+		"  easy8 pbi update --id 42 --status done",
+		"  easy8 pbi update --id 42 --name \"New name\" --estimate 5",
 	}
 	for _, line := range lines {
 		fmt.Fprintln(os.Stderr, line)
