@@ -27,6 +27,22 @@ func NewClient(cfg config.Config) *Client {
 		APIKey:  cfg.APIKey,
 		HTTP: &http.Client{
 			Timeout: 30 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				// Refuse redirect when the HTTP method would change
+				// (e.g. 301/302 silently converts PUT/POST to GET,
+				// which drops the request body and prevents updates).
+				if req.Method != via[0].Method {
+					return http.ErrUseLastResponse
+				}
+				// Carry the API key header to the redirected request.
+				if key := via[0].Header.Get("X-Redmine-API-Key"); key != "" {
+					req.Header.Set("X-Redmine-API-Key", key)
+				}
+				return nil
+			},
 		},
 	}
 }

@@ -52,6 +52,26 @@ func outputIssueDetail(issue api.Issue) int {
 	if issue.Description != "" {
 		fmt.Fprintf(w, "\nDescription:\n%s\n", issue.Description)
 	}
+	if len(issue.Attachments) > 0 {
+		fmt.Fprintf(w, "\nAttachments:\n")
+		for _, att := range issue.Attachments {
+			author := nameOrEmpty(att.Author)
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", att.Filename, formatFilesize(att.Filesize), author, att.CreatedOn)
+		}
+	}
+	if len(issue.Journals) > 0 {
+		fmt.Fprintf(w, "\nJournals:\n")
+		for _, j := range issue.Journals {
+			author := nameOrEmpty(j.User)
+			fmt.Fprintf(w, "  #%d\t%s\t%s\n", j.ID, author, j.CreatedOn)
+			for _, d := range j.Details {
+				fmt.Fprintf(w, "    %s:\t%s -> %s\n", d.Name, truncate(d.OldValue, 40), truncate(d.NewValue, 40))
+			}
+			if j.Notes != "" {
+				fmt.Fprintf(w, "    %s\n", truncate(j.Notes, 200))
+			}
+		}
+	}
 	if err := w.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, "output error:", err)
 		return 1
@@ -119,4 +139,26 @@ func nameOrEmpty(ref *api.NamedRef) string {
 		return ""
 	}
 	return ref.Name
+}
+
+func formatFilesize(bytes int) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+	)
+	switch {
+	case bytes >= mb:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
+	case bytes >= kb:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

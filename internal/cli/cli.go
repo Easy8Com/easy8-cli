@@ -370,6 +370,16 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	if err != nil {
 		return apiError(err)
 	}
+	// Redmine PUT typically returns 200 with empty body.
+	// Fetch the updated issue so the user sees the current state.
+	if resp.Issue.ID == 0 {
+		getResp, getErr := client.GetIssue(context.Background(), *id, nil)
+		if getErr != nil {
+			fmt.Fprintf(os.Stdout, "Issue #%d updated.\n", *id)
+			return 0
+		}
+		resp = getResp
+	}
 	if *jsonOut {
 		return outputJSON(resp)
 	}

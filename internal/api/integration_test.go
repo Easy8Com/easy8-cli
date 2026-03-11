@@ -138,11 +138,20 @@ func TestIntegrationCreateUpdateIssue(t *testing.T) {
 		Notes:   &notes,
 	}
 
-	updateResp, err := client.UpdateIssue(ctx, issueID, updateInput)
+	_, err = client.UpdateIssue(ctx, issueID, updateInput)
 	if err != nil {
 		t.Fatalf("UpdateIssue #%d: %v", issueID, err)
 	}
-	t.Logf("Updated issue #%d: %s", updateResp.Issue.ID, updateResp.Issue.Subject)
+
+	// Verify the update actually took effect by re-fetching.
+	getResp, err := client.GetIssue(ctx, issueID, nil)
+	if err != nil {
+		t.Fatalf("GetIssue #%d after update: %v", issueID, err)
+	}
+	if getResp.Issue.Subject != updatedSubject {
+		t.Fatalf("subject after update = %q, want %q", getResp.Issue.Subject, updatedSubject)
+	}
+	t.Logf("Verified update for issue #%d: %s", getResp.Issue.ID, getResp.Issue.Subject)
 }
 
 // envInt reads a required integer env var; skips the test if missing or invalid.

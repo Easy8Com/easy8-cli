@@ -6,20 +6,50 @@ type NamedRef struct {
 }
 
 type Issue struct {
+	ID          int          `json:"id"`
+	Subject     string       `json:"subject"`
+	Description string       `json:"description,omitempty"`
+	DoneRatio   int          `json:"done_ratio,omitempty"`
+	StartDate   string       `json:"start_date,omitempty"`
+	DueDate     string       `json:"due_date,omitempty"`
+	UpdatedOn   string       `json:"updated_on,omitempty"`
+	CreatedOn   string       `json:"created_on,omitempty"`
+	Project     *NamedRef    `json:"project,omitempty"`
+	Tracker     *NamedRef    `json:"tracker,omitempty"`
+	Status      *NamedRef    `json:"status,omitempty"`
+	Priority    *NamedRef    `json:"priority,omitempty"`
+	Author      *NamedRef    `json:"author,omitempty"`
+	AssignedTo  *NamedRef    `json:"assigned_to,omitempty"`
+	Journals    []Journal    `json:"journals,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+type Journal struct {
+	ID           int             `json:"id"`
+	User         *NamedRef       `json:"user,omitempty"`
+	Notes        string          `json:"notes"`
+	CreatedOn    string          `json:"created_on"`
+	PrivateNotes bool            `json:"private_notes"`
+	Details      []JournalDetail `json:"details"`
+}
+
+type JournalDetail struct {
+	Property string `json:"property"`
+	Name     string `json:"name"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+}
+
+type Attachment struct {
 	ID          int       `json:"id"`
-	Subject     string    `json:"subject"`
-	Description string    `json:"description,omitempty"`
-	DoneRatio   int       `json:"done_ratio,omitempty"`
-	StartDate   string    `json:"start_date,omitempty"`
-	DueDate     string    `json:"due_date,omitempty"`
-	UpdatedOn   string    `json:"updated_on,omitempty"`
-	CreatedOn   string    `json:"created_on,omitempty"`
-	Project     *NamedRef `json:"project,omitempty"`
-	Tracker     *NamedRef `json:"tracker,omitempty"`
-	Status      *NamedRef `json:"status,omitempty"`
-	Priority    *NamedRef `json:"priority,omitempty"`
+	Filename    string    `json:"filename"`
+	Filesize    int       `json:"filesize"`
+	ContentType string    `json:"content_type"`
+	Description string    `json:"description"`
+	Version     int       `json:"version"`
+	ContentURL  string    `json:"content_url"`
 	Author      *NamedRef `json:"author,omitempty"`
-	AssignedTo  *NamedRef `json:"assigned_to,omitempty"`
+	CreatedOn   string    `json:"created_on"`
 }
 
 type IssueInput struct {

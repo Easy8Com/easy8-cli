@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"easy8-cli/internal/config"
 )
 
 func TestListIssuesBuildsQuery(t *testing.T) {
@@ -162,7 +164,7 @@ func TestGetIssue(t *testing.T) {
 			t.Fatalf("include = %s", r.URL.Query().Get("include"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"issue":{"id":42,"subject":"Test issue","description":"desc","status":{"id":1,"name":"New"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"priority":{"id":4,"name":"Normal"},"author":{"id":51,"name":"Petr"},"assigned_to":{"id":51,"name":"Petr"},"done_ratio":50,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
+		_, _ = w.Write([]byte(`{"issue":{"id":42,"subject":"Test issue","description":"desc","status":{"id":1,"name":"New"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"priority":{"id":4,"name":"Normal"},"author":{"id":51,"name":"Petr"},"assigned_to":{"id":51,"name":"Petr"},"done_ratio":50,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15","journals":[{"id":100,"user":{"id":51,"name":"Petr"},"notes":"fixed the bug","created_on":"2024-01-10","private_notes":false,"details":[{"property":"attr","name":"status_id","old_value":"1","new_value":"2"}]}],"attachments":[{"id":200,"filename":"screenshot.png","filesize":51200,"content_type":"image/png","description":"UI screenshot","version":1,"content_url":"https://example.com/att/200","author":{"id":51,"name":"Petr"},"created_on":"2024-01-05"}]}}`))
 	}))
 	defer server.Close()
 
@@ -179,6 +181,35 @@ func TestGetIssue(t *testing.T) {
 	}
 	if resp.Issue.DoneRatio != 50 {
 		t.Fatalf("done_ratio = %d", resp.Issue.DoneRatio)
+	}
+	if len(resp.Issue.Journals) != 1 {
+		t.Fatalf("journals count = %d", len(resp.Issue.Journals))
+	}
+	j := resp.Issue.Journals[0]
+	if j.ID != 100 {
+		t.Fatalf("journal id = %d", j.ID)
+	}
+	if j.Notes != "fixed the bug" {
+		t.Fatalf("journal notes = %q", j.Notes)
+	}
+	if len(j.Details) != 1 || j.Details[0].Name != "status_id" {
+		t.Fatalf("journal details = %+v", j.Details)
+	}
+	if j.Details[0].OldValue != "1" || j.Details[0].NewValue != "2" {
+		t.Fatalf("journal detail values = %q -> %q", j.Details[0].OldValue, j.Details[0].NewValue)
+	}
+	if len(resp.Issue.Attachments) != 1 {
+		t.Fatalf("attachments count = %d", len(resp.Issue.Attachments))
+	}
+	a := resp.Issue.Attachments[0]
+	if a.ID != 200 {
+		t.Fatalf("attachment id = %d", a.ID)
+	}
+	if a.Filename != "screenshot.png" {
+		t.Fatalf("attachment filename = %q", a.Filename)
+	}
+	if a.Filesize != 51200 {
+		t.Fatalf("attachment filesize = %d", a.Filesize)
 	}
 }
 
@@ -231,6 +262,76 @@ func TestAPIErrorIncludesBody(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bad request") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdateIssueEmptyResponse(t *testing.T) {
+	var receivedMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		var request IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if request.Issue.Notes == nil || *request.Issue.Notes != "test note" {
+			t.Fatalf("notes = %v", request.Issue.Notes)
+		}
+		// Redmine returns 200 with empty body on successful PUT.
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	notes := "test note"
+	resp, err := client.UpdateIssue(context.Background(), 42, IssueInput{Notes: &notes})
+	if err != nil {
+		t.Fatalf("UpdateIssue error: %v", err)
+	}
+	if receivedMethod != http.MethodPut {
+		t.Fatalf("server received %s, want PUT", receivedMethod)
+	}
+	// Empty response means zero-value issue.
+	if resp.Issue.ID != 0 {
+		t.Fatalf("expected zero ID from empty response, got %d", resp.Issue.ID)
+	}
+}
+
+func TestRedirectPreservesMethod(t *testing.T) {
+	var finalMethod string
+	// Target server that records the received method.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		finalMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	// Redirect server that sends 302 (which would change PUT→GET by default).
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer redirect.Close()
+
+	client := NewClient(config.Config{BaseURL: redirect.URL, APIKey: "key"})
+	notes := "test"
+	_, err := client.UpdateIssue(context.Background(), 1, IssueInput{Notes: &notes})
+	// The redirect changes PUT→GET, so our CheckRedirect should refuse it.
+	// doJSON sees the 302 status and returns APIError.
+	if err == nil {
+		t.Fatal("expected error for method-changing redirect")
+	}
+	var apiErr APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want %d", apiErr.StatusCode, http.StatusFound)
+	}
+	// Target should NOT have been hit, or if it was, it must be a GET (which we prevented).
+	if finalMethod == http.MethodPut {
+		t.Fatal("redirect should not have forwarded the PUT")
 	}
 }
 

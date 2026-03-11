@@ -151,6 +151,23 @@ func TestIssueUpdateTableOutput(t *testing.T) {
 	}
 }
 
+func TestIssueUpdateWithNotesRefetch(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "update", "--id", "101", "--notes", "a test note"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	// After PUT (empty body), the CLI re-fetches via GET and displays the issue.
+	if !strings.Contains(stdout, "Fix onboarding") {
+		t.Fatalf("expected re-fetched issue in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "101") {
+		t.Fatalf("expected issue ID in stdout: %s", stdout)
+	}
+}
+
 func TestIssueShowTableOutput(t *testing.T) {
 	server := newTestServer(t)
 	setTestEnv(t, server.URL)
@@ -202,6 +219,72 @@ func TestIssueShowMissingID(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "--id is required") {
 		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueShowWithJournalsAndAttachments(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "show", "--id", "101", "--include", "journals,attachments"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	// Basic fields still present
+	if !strings.Contains(stdout, "Fix onboarding") {
+		t.Fatalf("expected subject in stdout: %s", stdout)
+	}
+	// Journals section
+	if !strings.Contains(stdout, "Journals:") {
+		t.Fatalf("expected Journals section in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Bob") {
+		t.Fatalf("expected journal author Bob in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Started work on this") {
+		t.Fatalf("expected journal notes in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "status_id") {
+		t.Fatalf("expected journal detail name in stdout: %s", stdout)
+	}
+	// Attachments section
+	if !strings.Contains(stdout, "Attachments:") {
+		t.Fatalf("expected Attachments section in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "design.pdf") {
+		t.Fatalf("expected attachment filename in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "200.0 KB") {
+		t.Fatalf("expected attachment filesize in stdout: %s", stdout)
+	}
+}
+
+func TestIssueShowWithJournalsJSON(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "show", "--id", "101", "--include", "journals,attachments", "--json"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	var resp api.IssueResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("json error: %v", err)
+	}
+	if len(resp.Issue.Journals) != 2 {
+		t.Fatalf("journals count = %d", len(resp.Issue.Journals))
+	}
+	if resp.Issue.Journals[0].Notes != "Started work on this" {
+		t.Fatalf("journal notes = %q", resp.Issue.Journals[0].Notes)
+	}
+	if len(resp.Issue.Journals[1].Details) != 1 {
+		t.Fatalf("journal details count = %d", len(resp.Issue.Journals[1].Details))
+	}
+	if len(resp.Issue.Attachments) != 1 {
+		t.Fatalf("attachments count = %d", len(resp.Issue.Attachments))
+	}
+	if resp.Issue.Attachments[0].Filename != "design.pdf" {
+		t.Fatalf("attachment filename = %q", resp.Issue.Attachments[0].Filename)
 	}
 }
 
@@ -466,11 +549,17 @@ func newTestServer(t *testing.T) *httptest.Server {
 	handler.HandleFunc("/issues/101.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
+			inc := r.URL.Query().Get("include")
+			if strings.Contains(inc, "journals") || strings.Contains(inc, "attachments") {
+				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15","journals":[{"id":500,"user":{"id":1,"name":"Bob"},"notes":"Started work on this","created_on":"2024-01-02","private_notes":false,"details":[]},{"id":501,"user":{"id":2,"name":"Alice"},"notes":"","created_on":"2024-01-03","private_notes":false,"details":[{"property":"attr","name":"status_id","old_value":"1","new_value":"2"}]}],"attachments":[{"id":300,"filename":"design.pdf","filesize":204800,"content_type":"application/pdf","description":"Design doc","version":1,"content_url":"https://example.com/att/300","author":{"id":1,"name":"Bob"},"created_on":"2024-01-01"}]}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
+			}
 			return
 		}
 		if r.Method == http.MethodPut {
-			_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","status":{"id":2,"name":"In Progress"}}}`))
+			// Real Redmine returns 200 with empty body on successful PUT.
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		w.WriteHeader(http.StatusMethodNotAllowed)
