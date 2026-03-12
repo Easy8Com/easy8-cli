@@ -21,7 +21,7 @@ Use this skill when a user asks to work with Easy8 tasks/issues/PBIs and details
   - `fetch issue details #1234`
   - `fix issue #1234`
   - `fetch pbi details #42`
-- If numeric ID is present, go directly to `show --id ... --json`.
+- If numeric ID is present, go directly to `show <id> --json`.
 - If ID is not present, run search/list command first and disambiguate from top hits.
 
 ## CLI Location
@@ -69,7 +69,7 @@ ID parsing:
 If user says: `fix issue #124`
 
 ```bash
-go run ./cmd/easy8 issue show --id 124 --json
+go run ./cmd/easy8 issue show 124 --json
 ```
 
 ### Issue search when ID missing
@@ -83,7 +83,7 @@ go run ./cmd/easy8 issue search --q "<user text>" --json
 If user says: `fix pbi #42`
 
 ```bash
-go run ./cmd/easy8 pbi show --id 42 --json
+go run ./cmd/easy8 pbi show 42 --json
 ```
 
 ### PBI search/list when ID missing
@@ -95,7 +95,7 @@ go run ./cmd/easy8 pbi list --q "<user text>" --json
 ### PBI update (only when explicitly requested)
 
 ```bash
-go run ./cmd/easy8 pbi update --id 42 --status done
+go run ./cmd/easy8 pbi update 42 --status done
 ```
 
 ## Output Format
@@ -120,6 +120,6 @@ After fetching entity, return a short brief:
 
 ## Examples
 
-- `fix issue #124` -> `issue show --id 124 --json`
+- `fix issue #124` -> `issue show 124 --json`
 - `find pbi onboarding` -> `pbi list --q "onboarding" --json`
-- `set pbi #42 to done` -> `pbi update --id 42 --status done`
+- `set pbi #42 to done` -> `pbi update 42 --status done`

@@ -156,6 +156,15 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 }
 
 func runIssueShow(args []string, cfg config.Config, client *api.Client) int {
+	normalizedArgs, positionalID, hasPositionalID, err := normalizeIDArgs(args)
+	if err != nil {
+		return usageError(err)
+	}
+	explicitID, hasExplicitID, err := extractExplicitIDArg(args)
+	if err != nil {
+		return usageError(err)
+	}
+
 	fs := flag.NewFlagSet("issue show", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -163,12 +172,16 @@ func runIssueShow(args []string, cfg config.Config, client *api.Client) int {
 	include := fs.String("include", "", "Include fields (comma-separated, e.g. journals,attachments)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
 	}
 
-	if err := requireInt("id", *id); err != nil {
-		return usageError(err)
+	if hasPositionalID && hasExplicitID && positionalID != explicitID {
+		return usageError(fmt.Errorf("positional id %d does not match --id %d", positionalID, explicitID))
+	}
+
+	if *id == 0 {
+		return usageError(fmt.Errorf("id is required (use '<id>' or --id)"))
 	}
 
 	var includes []string
@@ -315,6 +328,15 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 }
 
 func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
+	normalizedArgs, positionalID, hasPositionalID, err := normalizeIDArgs(args)
+	if err != nil {
+		return usageError(err)
+	}
+	explicitID, hasExplicitID, err := extractExplicitIDArg(args)
+	if err != nil {
+		return usageError(err)
+	}
+
 	fs := flag.NewFlagSet("issue update", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -332,12 +354,16 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	notes := fs.String("notes", "", "Notes (journal entry)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
 	}
 
-	if err := requireInt("id", *id); err != nil {
-		return usageError(err)
+	if hasPositionalID && hasExplicitID && positionalID != explicitID {
+		return usageError(fmt.Errorf("positional id %d does not match --id %d", positionalID, explicitID))
+	}
+
+	if *id == 0 {
+		return usageError(fmt.Errorf("id is required (use '<id>' or --id)"))
 	}
 
 	input := api.IssueInput{}
@@ -452,18 +478,31 @@ func runPBIList(args []string, cfg config.Config, client *api.Client) int {
 }
 
 func runPBIShow(args []string, cfg config.Config, client *api.Client) int {
+	normalizedArgs, positionalID, hasPositionalID, err := normalizeIDArgs(args)
+	if err != nil {
+		return usageError(err)
+	}
+	explicitID, hasExplicitID, err := extractExplicitIDArg(args)
+	if err != nil {
+		return usageError(err)
+	}
+
 	fs := flag.NewFlagSet("pbi show", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	id := fs.Int("id", 0, "PBI ID (required)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
 	}
 
-	if err := requireInt("id", *id); err != nil {
-		return usageError(err)
+	if hasPositionalID && hasExplicitID && positionalID != explicitID {
+		return usageError(fmt.Errorf("positional id %d does not match --id %d", positionalID, explicitID))
+	}
+
+	if *id == 0 {
+		return usageError(fmt.Errorf("id is required (use '<id>' or --id)"))
 	}
 
 	resp, err := client.GetPBI(context.Background(), *id)
@@ -496,6 +535,15 @@ func runPBIShow(args []string, cfg config.Config, client *api.Client) int {
 }
 
 func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
+	normalizedArgs, positionalID, hasPositionalID, err := normalizeIDArgs(args)
+	if err != nil {
+		return usageError(err)
+	}
+	explicitID, hasExplicitID, err := extractExplicitIDArg(args)
+	if err != nil {
+		return usageError(err)
+	}
+
 	fs := flag.NewFlagSet("pbi update", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -505,12 +553,16 @@ func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
 	status := fs.String("status", "", "New status (to_do, realization, done, deleted)")
 	estimate := fs.String("estimate", "", "New estimate")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
 	}
 
-	if err := requireInt("id", *id); err != nil {
-		return usageError(err)
+	if hasPositionalID && hasExplicitID && positionalID != explicitID {
+		return usageError(fmt.Errorf("positional id %d does not match --id %d", positionalID, explicitID))
+	}
+
+	if *id == 0 {
+		return usageError(fmt.Errorf("id is required (use '<id>' or --id)"))
 	}
 
 	var input api.PBIInput
@@ -527,7 +579,7 @@ func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
 		input.Estimate = estimate
 	}
 
-	err := client.UpdatePBI(context.Background(), *id, input)
+	err = client.UpdatePBI(context.Background(), *id, input)
 	if err != nil {
 		return apiError(err)
 	}
@@ -590,19 +642,21 @@ func printIssueUsage() {
 		"",
 		"Usage:",
 		"  easy8 issue create [flags]",
-		"  easy8 issue show [flags]",
+		"  easy8 issue show <id> [flags]",
 		"  easy8 issue list [flags]",
 		"  easy8 issue search [flags]",
-		"  easy8 issue update [flags]",
+		"  easy8 issue update <id> [flags]",
 		"",
 		"Examples:",
+		"  easy8 issue show 123",
+		"  easy8 issue show 123 --include journals,attachments --json",
 		"  easy8 issue show --id 123",
-		"  easy8 issue show --id 123 --include journals,attachments --json",
 		"  easy8 issue list --limit 10",
 		"  easy8 issue search --q \"onboarding\"",
 		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
 		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
 		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2",
+		"  easy8 issue update 123 --status-id 5",
 		"  easy8 issue update --id 123 --status-id 5",
 	}
 	for _, line := range lines {
@@ -616,15 +670,17 @@ func printPBIUsage() {
 		"",
 		"Usage:",
 		"  easy8 pbi list [flags]",
-		"  easy8 pbi show [flags]",
-		"  easy8 pbi update [flags]",
+		"  easy8 pbi show <id> [flags]",
+		"  easy8 pbi update <id> [flags]",
 		"",
 		"Examples:",
 		"  easy8 pbi list --limit 10",
 		"  easy8 pbi list --status to_do --board-id 17",
 		"  easy8 pbi list --q \"design\" --author-id 51",
+		"  easy8 pbi show 42",
+		"  easy8 pbi show 42 --json",
 		"  easy8 pbi show --id 42",
-		"  easy8 pbi show --id 42 --json",
+		"  easy8 pbi update 42 --status done",
 		"  easy8 pbi update --id 42 --status done",
 		"  easy8 pbi update --id 42 --name \"New name\" --estimate 5",
 	}
@@ -661,6 +717,56 @@ func parseInt(value string) (int, error) {
 		return 0, fmt.Errorf("invalid int: %s", value)
 	}
 	return parsed, nil
+}
+
+func normalizeIDArgs(args []string) ([]string, int, bool, error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return args, 0, false, nil
+	}
+
+	id, err := parseInt(args[0])
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("invalid id: %s", args[0])
+	}
+
+	normalized := make([]string, 0, len(args)+1)
+	normalized = append(normalized, "--id", args[0])
+	normalized = append(normalized, args[1:]...)
+	return normalized, id, true, nil
+}
+
+func extractExplicitIDArg(args []string) (int, bool, error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "--id" || arg == "-id":
+			if i+1 >= len(args) {
+				return 0, false, fmt.Errorf("--id requires a value")
+			}
+			id, err := parseInt(args[i+1])
+			if err != nil {
+				return 0, false, fmt.Errorf("invalid id: %s", args[i+1])
+			}
+			return id, true, nil
+		case strings.HasPrefix(arg, "--id="):
+			value := strings.TrimPrefix(arg, "--id=")
+			id, err := parseInt(value)
+			if err != nil {
+				return 0, false, fmt.Errorf("invalid id: %s", value)
+			}
+			return id, true, nil
+		case strings.HasPrefix(arg, "-id="):
+			value := strings.TrimPrefix(arg, "-id=")
+			id, err := parseInt(value)
+			if err != nil {
+				return 0, false, fmt.Errorf("invalid id: %s", value)
+			}
+			return id, true, nil
+		}
+	}
+
+	return 0, false, nil
 }
 
 func splitComma(input string) []string {

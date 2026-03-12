@@ -118,8 +118,8 @@ najdi pbi onboarding
 Typical command mapping used by the skill:
 
 ```bash
-easy8 issue show --id 1234 --json
-easy8 pbi show --id 42 --json
+easy8 issue show 1234 --json
+easy8 pbi show 42 --json
 easy8 pbi list --q "onboarding" --json
 ```
 
@@ -128,9 +128,10 @@ If the copied skill is not visible immediately, restart the OpenCode session so 
 ### Show issue detail
 
 ```bash
-easy8 issue show --id 123
-easy8 issue show --id 123 --include journals,attachments
-easy8 issue show --id 123 --json
+easy8 issue show 123
+easy8 issue show 123 --include journals,attachments
+easy8 issue show 123 --json
+easy8 issue show --id 123  # legacy compatible form
 ```
 
 ### List issues
@@ -180,7 +181,8 @@ easy8 issue create \
 ### Update issue
 
 ```bash
-easy8 issue update --id 123 --status-id 5 --done-ratio 80
+easy8 issue update 123 --status-id 5 --done-ratio 80
+easy8 issue update --id 123 --status-id 5 --done-ratio 80  # legacy compatible form
 ```
 
 `--done-ratio` must be between 0 and 100.
@@ -200,15 +202,17 @@ Filters: `--status` (to_do, realization, done, deleted), `--author-id`, `--board
 ### Show PBI detail
 
 ```bash
-easy8 pbi show --id 42
-easy8 pbi show --id 42 --json
+easy8 pbi show 42
+easy8 pbi show 42 --json
+easy8 pbi show --id 42  # legacy compatible form
 ```
 
 ### Update PBI
 
 ```bash
-easy8 pbi update --id 42 --status done
-easy8 pbi update --id 42 --name "New name" --estimate 5 --description "Details"
+easy8 pbi update 42 --status done
+easy8 pbi update 42 --name "New name" --estimate 5 --description "Details"
+easy8 pbi update --id 42 --status done  # legacy compatible form
 ```
 
 Updatable fields: `--name`, `--description`, `--status`, `--estimate`.
@@ -225,9 +229,9 @@ Any command supports `--json`:
 
 ```bash
 easy8 issue list --json
-easy8 issue show --id 123 --json
+easy8 issue show 123 --json
 easy8 pbi list --json
-easy8 pbi show --id 42 --json
+easy8 pbi show 42 --json
 ```
 
 ## Testing

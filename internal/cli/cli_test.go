@@ -168,6 +168,19 @@ func TestIssueUpdateWithNotesRefetch(t *testing.T) {
 	}
 }
 
+func TestIssueUpdateWithPositionalID(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "update", "101", "--status-id", "2"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Fix onboarding") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
 func TestIssueShowTableOutput(t *testing.T) {
 	server := newTestServer(t)
 	setTestEnv(t, server.URL)
@@ -187,6 +200,23 @@ func TestIssueShowTableOutput(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Onboarding flow needs fixing") {
 		t.Fatalf("expected description in stdout: %s", stdout)
+	}
+}
+
+func TestIssueShowWithPositionalID(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "show", "101", "--json"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	var resp api.IssueResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("json error: %v", err)
+	}
+	if resp.Issue.ID != 101 {
+		t.Fatalf("issue id = %d", resp.Issue.ID)
 	}
 }
 
@@ -217,7 +247,19 @@ func TestIssueShowMissingID(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stderr, "--id is required") {
+	if !strings.Contains(stderr, "id is required (use '<id>' or --id)") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueShowPositionalAndFlagIDConflict(t *testing.T) {
+	setTestHome(t)
+
+	_, stderr, code := captureRun(t, []string{"issue", "show", "101", "--id", "102"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "positional id 101 does not match --id 102") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
@@ -419,6 +461,23 @@ func TestPBIShowTableOutput(t *testing.T) {
 	}
 }
 
+func TestPBIShowWithPositionalID(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"pbi", "show", "1", "--json"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	var resp api.PBIResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("json error: %v", err)
+	}
+	if resp.PBI.ID != 1 {
+		t.Fatalf("id = %d", resp.PBI.ID)
+	}
+}
+
 func TestPBIShowJSONOutput(t *testing.T) {
 	server := newTestServer(t)
 	setTestEnv(t, server.URL)
@@ -443,7 +502,7 @@ func TestPBIShowMissingID(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stderr, "--id is required") {
+	if !strings.Contains(stderr, "id is required (use '<id>' or --id)") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
@@ -461,6 +520,19 @@ func TestPBIUpdateSuccess(t *testing.T) {
 	}
 }
 
+func TestPBIUpdateWithPositionalID(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"pbi", "update", "1", "--status", "done"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "PBI #1 updated") {
+		t.Fatalf("expected update message: %s", stdout)
+	}
+}
+
 func TestPBIUpdateMissingID(t *testing.T) {
 	setTestHome(t)
 
@@ -468,7 +540,19 @@ func TestPBIUpdateMissingID(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stderr, "--id is required") {
+	if !strings.Contains(stderr, "id is required (use '<id>' or --id)") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestPBIUpdatePositionalAndFlagIDConflict(t *testing.T) {
+	setTestHome(t)
+
+	_, stderr, code := captureRun(t, []string{"pbi", "update", "1", "--id", "2", "--status", "done"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "positional id 1 does not match --id 2") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
