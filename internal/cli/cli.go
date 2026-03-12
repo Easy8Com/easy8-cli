@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -13,8 +16,16 @@ import (
 	"easy8-cli/internal/config"
 )
 
-// Version is set at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "dev"
+// Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
+var Version = "0.1.0"
+
+const setupBanner = `                                   ┌─────────┐
+███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
+██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝  │██     ██│
+█████╗  ███████║███████╗ ╚████╔╝   │ ███████ │
+██╔══╝  ██╔══██║╚════██║  ╚██╔╝    │██     ██│
+███████╗██║  ██║███████║   ██║     │ ███████ │
+╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝     └─────────┘`
 
 func Run(args []string) int {
 	cfg, err := config.Load()
@@ -33,6 +44,14 @@ func Run(args []string) int {
 		return runIssue(args[1:], cfg)
 	case "pbi":
 		return runPBI(args[1:], cfg)
+	case "auth":
+		return runAuth(args[1:], cfg)
+	case "setup":
+		return runSetup(args[1:], cfg)
+	case "skill":
+		return runSkill(args[1:], cfg)
+	case "commands":
+		return runCommands(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(Version)
 		return 0
@@ -75,6 +94,134 @@ func runIssue(args []string, cfg config.Config) int {
 	}
 }
 
+func runSetup(args []string, cfg config.Config) int {
+	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	baseURL := fs.String("base-url", "", "Easy8 base URL")
+	apiKey := fs.String("api-key", "", "Easy8 API key")
+	var projectID optionalInt
+	var trackerID optionalInt
+	var statusID optionalInt
+	var priorityID optionalInt
+	var authorID optionalInt
+	var assignedToID optionalInt
+	fs.Var(&projectID, "project-id", "Default project ID")
+	fs.Var(&trackerID, "tracker-id", "Default tracker ID")
+	fs.Var(&statusID, "status-id", "Default status ID")
+	fs.Var(&priorityID, "priority-id", "Default priority ID")
+	fs.Var(&authorID, "author-id", "Default author ID")
+	fs.Var(&assignedToID, "assigned-to-id", "Default assigned-to ID")
+	globalOut := fs.Bool("global", false, "Save to global config (~/.config/easy8/config.yaml)")
+	localOut := fs.Bool("local", false, "Save to local config (.easy8.yaml)")
+	nonInteractive := fs.Bool("non-interactive", false, "Do not prompt for missing values")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		return usageError(fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " ")))
+	}
+	if *globalOut && *localOut {
+		return usageError(fmt.Errorf("--global and --local cannot be used together"))
+	}
+
+	if !*nonInteractive {
+		fmt.Fprintln(os.Stdout, setupBanner)
+		fmt.Fprintln(os.Stdout)
+	}
+
+	saveLocal := *localOut
+	if !*globalOut && !*localOut && !*nonInteractive {
+		fmt.Fprintln(os.Stdout, "Config scope:")
+		fmt.Fprintln(os.Stdout, "  global -> ~/.config/easy8/config.yaml (all projects)")
+		fmt.Fprintln(os.Stdout, "  local  -> ./.easy8.yaml (current project only; overrides global)")
+		scope, err := promptScope(os.Stdin, os.Stdout)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		saveLocal = (scope == "local")
+	}
+
+	baseURLValue := strings.TrimSpace(*baseURL)
+	apiKeyValue := strings.TrimSpace(*apiKey)
+
+	if *nonInteractive {
+		if baseURLValue == "" {
+			return usageError(fmt.Errorf("--base-url is required in --non-interactive mode"))
+		}
+		if apiKeyValue == "" {
+			return usageError(fmt.Errorf("--api-key is required in --non-interactive mode"))
+		}
+	} else {
+		var err error
+		baseURLValue, err = promptString(os.Stdin, os.Stdout, "Easy8 base URL", firstNonEmpty(baseURLValue, cfg.BaseURL))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		apiKeyValue, err = promptString(os.Stdin, os.Stdout, "Easy8 API key", firstNonEmpty(apiKeyValue, cfg.APIKey))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+	}
+
+	if strings.TrimSpace(baseURLValue) == "" {
+		return usageError(fmt.Errorf("base URL is required"))
+	}
+	if strings.TrimSpace(apiKeyValue) == "" {
+		return usageError(fmt.Errorf("API key is required"))
+	}
+	if err := validateBaseURL(baseURLValue); err != nil {
+		return usageError(err)
+	}
+
+	defaults := cfg.Defaults
+	if projectID.set {
+		defaults.ProjectID = projectID.value
+	}
+	if trackerID.set {
+		defaults.TrackerID = trackerID.value
+	}
+	if statusID.set {
+		defaults.StatusID = statusID.value
+	}
+	if priorityID.set {
+		defaults.PriorityID = priorityID.value
+	}
+	if authorID.set {
+		defaults.AuthorID = authorID.value
+	}
+	if assignedToID.set {
+		defaults.AssignedToID = assignedToID.value
+	}
+
+	newCfg := config.Config{
+		BaseURL:  strings.TrimSpace(baseURLValue),
+		APIKey:   strings.TrimSpace(apiKeyValue),
+		Defaults: defaults,
+	}
+
+	var (
+		path string
+		err  error
+	)
+	if saveLocal {
+		path, err = config.SaveLocal(newCfg)
+	} else {
+		path, err = config.SaveGlobal(newCfg)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config error:", err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stdout, "Configuration saved to %s\n", path)
+	return 0
+}
+
 func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	fs := flag.NewFlagSet("issue create", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -92,9 +239,13 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	var doneRatio optionalInt
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	if err := requireString("subject", *subject); err != nil {
@@ -149,8 +300,16 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		return apiError(err)
 	}
 
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("Issue #%d created", resp.Issue.ID)
+		breadcrumbs := []outputBreadcrumb{
+			{Action: "show", Cmd: fmt.Sprintf("easy8 issue show %d", resp.Issue.ID), Description: "Show issue detail"},
+			{Action: "update", Cmd: fmt.Sprintf("easy8 issue update %d --status-id <id>", resp.Issue.ID), Description: "Update issue"},
+		}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputIssues([]api.Issue{resp.Issue})
 }
@@ -171,9 +330,13 @@ func runIssueShow(args []string, cfg config.Config, client *api.Client) int {
 	id := fs.Int("id", 0, "Issue ID (required)")
 	include := fs.String("include", "", "Include fields (comma-separated, e.g. journals,attachments)")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	if hasPositionalID && hasExplicitID && positionalID != explicitID {
@@ -194,8 +357,17 @@ func runIssueShow(args []string, cfg config.Config, client *api.Client) int {
 		return apiError(err)
 	}
 
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("Issue #%d: %s", resp.Issue.ID, resp.Issue.Subject)
+		breadcrumbs := []outputBreadcrumb{
+			{Action: "update", Cmd: fmt.Sprintf("easy8 issue update %d --status-id <id>", resp.Issue.ID), Description: "Update issue"},
+			{Action: "list", Cmd: "easy8 issue list", Description: "List issues"},
+			{Action: "search", Cmd: "easy8 issue search --q \"text\"", Description: "Search issues"},
+		}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputIssueDetail(resp.Issue)
 }
@@ -210,9 +382,13 @@ func runIssueList(args []string, cfg config.Config, client *api.Client) int {
 	query := fs.String("q", "", "Free-text query (easy_query_q)")
 	include := fs.String("include", "", "Include fields (comma-separated)")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	params := api.IssueListParams{
@@ -229,8 +405,13 @@ func runIssueList(args []string, cfg config.Config, client *api.Client) int {
 	if err != nil {
 		return apiError(err)
 	}
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("%d issues", len(resp.Issues))
+		breadcrumbs := []outputBreadcrumb{{Action: "show", Cmd: "easy8 issue show <id>", Description: "Show issue detail"}}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputIssues(resp.Issues)
 }
@@ -269,9 +450,13 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 	fs.StringVar(&taskType, "task-type", "", "Task type (tracker) name")
 	fs.StringVar(&project, "project", "", "Project name")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	resolvedAssigneeID, err := resolveAssigneeID(context.Background(), client, assigneeID, assignee)
@@ -321,8 +506,13 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 	if err != nil {
 		return apiError(err)
 	}
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("%d issues matched", len(resp.Issues))
+		breadcrumbs := []outputBreadcrumb{{Action: "show", Cmd: "easy8 issue show <id>", Description: "Show issue detail"}}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputIssues(resp.Issues)
 }
@@ -353,9 +543,13 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
 	notes := fs.String("notes", "", "Notes (journal entry)")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	if hasPositionalID && hasExplicitID && positionalID != explicitID {
@@ -406,8 +600,16 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 		}
 		resp = getResp
 	}
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("Issue #%d updated", resp.Issue.ID)
+		breadcrumbs := []outputBreadcrumb{
+			{Action: "show", Cmd: fmt.Sprintf("easy8 issue show %d", resp.Issue.ID), Description: "Show updated issue"},
+			{Action: "list", Cmd: "easy8 issue list", Description: "List issues"},
+		}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputIssues([]api.Issue{resp.Issue})
 }
@@ -451,9 +653,13 @@ func runPBIList(args []string, cfg config.Config, client *api.Client) int {
 	authorID := fs.Int("author-id", 0, "Filter by author ID")
 	boardID := fs.Int("board-id", 0, "Filter by board ID")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	params := api.PBIListParams{
@@ -471,8 +677,13 @@ func runPBIList(args []string, cfg config.Config, client *api.Client) int {
 		return apiError(err)
 	}
 
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("%d PBIs", len(resp.PBIs))
+		breadcrumbs := []outputBreadcrumb{{Action: "show", Cmd: "easy8 pbi show <id>", Description: "Show PBI detail"}}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputPBIs(resp.PBIs)
 }
@@ -492,9 +703,13 @@ func runPBIShow(args []string, cfg config.Config, client *api.Client) int {
 
 	id := fs.Int("id", 0, "PBI ID (required)")
 	jsonOut := fs.Bool("json", false, "JSON output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
 	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	if hasPositionalID && hasExplicitID && positionalID != explicitID {
@@ -528,8 +743,16 @@ func runPBIShow(args []string, cfg config.Config, client *api.Client) int {
 		}
 	}
 
-	if *jsonOut {
+	if *quietOut {
 		return outputJSON(resp)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("PBI #%d: %s", resp.PBI.ID, resp.PBI.Name)
+		breadcrumbs := []outputBreadcrumb{
+			{Action: "update", Cmd: fmt.Sprintf("easy8 pbi update %d --status done", resp.PBI.ID), Description: "Update PBI"},
+			{Action: "list", Cmd: "easy8 pbi list", Description: "List PBIs"},
+		}
+		return outputJSONEnvelope(resp, summary, breadcrumbs, nil)
 	}
 	return outputPBIDetail(resp.PBI, issues)
 }
@@ -552,9 +775,14 @@ func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
 	description := fs.String("description", "", "New description")
 	status := fs.String("status", "", "New status (to_do, realization, done, deleted)")
 	estimate := fs.String("estimate", "", "New estimate")
+	jsonOut := fs.Bool("json", false, "JSON envelope output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON data output")
 
 	if err := fs.Parse(normalizedArgs); err != nil {
 		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
 	}
 
 	if hasPositionalID && hasExplicitID && positionalID != explicitID {
@@ -582,6 +810,21 @@ func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
 	err = client.UpdatePBI(context.Background(), *id, input)
 	if err != nil {
 		return apiError(err)
+	}
+
+	result := map[string]any{
+		"id":      *id,
+		"updated": true,
+	}
+	breadcrumbs := []outputBreadcrumb{
+		{Action: "show", Cmd: fmt.Sprintf("easy8 pbi show %d", *id), Description: "Show PBI detail"},
+		{Action: "list", Cmd: "easy8 pbi list", Description: "List PBIs"},
+	}
+	if *quietOut {
+		return outputJSON(result)
+	}
+	if *jsonOut {
+		return outputJSONEnvelope(result, fmt.Sprintf("PBI #%d updated", *id), breadcrumbs, nil)
 	}
 
 	fmt.Fprintf(os.Stdout, "PBI #%d updated.\n", *id)
@@ -616,6 +859,10 @@ func printUsage() {
 		"Usage:",
 		"  easy8 issue <command> [flags]",
 		"  easy8 pbi <command> [flags]",
+		"  easy8 auth <command> [flags]",
+		"  easy8 setup [flags]",
+		"  easy8 skill [command] [flags]",
+		"  easy8 commands [flags]",
 		"  easy8 version",
 		"",
 		"Commands:",
@@ -627,9 +874,15 @@ func printUsage() {
 		"  pbi list       List product backlog items",
 		"  pbi show       Show PBI detail",
 		"  pbi update     Update a PBI",
+		"  auth status    Show authentication status",
+		"  auth login     Save API key",
+		"  auth logout    Remove API key",
+		"  setup          Configure base URL and API key",
+		"  skill          Print/install skill file",
+		"  commands       List command catalog",
 		"  version        Print version",
 		"",
-		"Use 'easy8 issue --help' or 'easy8 pbi --help' for details.",
+		"Use 'easy8 issue --help', 'easy8 pbi --help', 'easy8 auth --help', 'easy8 setup --help', or 'easy8 skill --help' for details.",
 	}
 	for _, line := range lines {
 		fmt.Fprintln(os.Stderr, line)
@@ -650,6 +903,7 @@ func printIssueUsage() {
 		"Examples:",
 		"  easy8 issue show 123",
 		"  easy8 issue show 123 --include journals,attachments --json",
+		"  easy8 issue show 123 --quiet",
 		"  easy8 issue show --id 123",
 		"  easy8 issue list --limit 10",
 		"  easy8 issue search --q \"onboarding\"",
@@ -679,6 +933,7 @@ func printPBIUsage() {
 		"  easy8 pbi list --q \"design\" --author-id 51",
 		"  easy8 pbi show 42",
 		"  easy8 pbi show 42 --json",
+		"  easy8 pbi show 42 --quiet",
 		"  easy8 pbi show --id 42",
 		"  easy8 pbi update 42 --status done",
 		"  easy8 pbi update --id 42 --status done",
@@ -717,6 +972,79 @@ func parseInt(value string) (int, error) {
 		return 0, fmt.Errorf("invalid int: %s", value)
 	}
 	return parsed, nil
+}
+
+func promptString(input io.Reader, output io.Writer, label, defaultValue string) (string, error) {
+	reader := bufio.NewReader(input)
+	prompt := label
+	if strings.TrimSpace(defaultValue) != "" {
+		prompt = fmt.Sprintf("%s [%s]", label, strings.TrimSpace(defaultValue))
+	}
+	if _, err := fmt.Fprintf(output, "%s: ", prompt); err != nil {
+		return "", err
+	}
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	value := strings.TrimSpace(line)
+	if value == "" {
+		value = strings.TrimSpace(defaultValue)
+	}
+	if value == "" {
+		return "", fmt.Errorf("%s is required", strings.ToLower(label))
+	}
+	return value, nil
+}
+
+func promptScope(input io.Reader, output io.Writer) (string, error) {
+	reader := bufio.NewReader(input)
+	if _, err := fmt.Fprint(output, "Where to save config? [global/local] (default: global): "); err != nil {
+		return "", err
+	}
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	value := strings.ToLower(strings.TrimSpace(line))
+	if value == "" {
+		return "global", nil
+	}
+	switch value {
+	case "g", "global":
+		return "global", nil
+	case "l", "local":
+		return "local", nil
+	default:
+		return "", fmt.Errorf("invalid scope: %s (use global or local)", value)
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func validateBaseURL(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("base URL is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("base URL must start with http:// or https://")
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("base URL must include a host")
+	}
+	return nil
 }
 
 func normalizeIDArgs(args []string) ([]string, int, bool, error) {

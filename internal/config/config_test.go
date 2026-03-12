@@ -1,10 +1,11 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -13,12 +14,18 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("EASY8_BASE_URL", "")
 	t.Setenv("EASY8_API_KEY", "")
 
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load error: %v", err)
 	}
-	if cfg.BaseURL != "https://demo.easysoftware.com" {
+	if cfg.BaseURL != "https://demo.easy8.com" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.APIKey != "" {
+		t.Fatalf("APIKey = %q", cfg.APIKey)
 	}
 }
 
@@ -33,6 +40,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("EASY8_DEFAULT_PRIORITY_ID", "13")
 	t.Setenv("EASY8_DEFAULT_AUTHOR_ID", "14")
 	t.Setenv("EASY8_DEFAULT_ASSIGNED_TO_ID", "15")
+
+	project := t.TempDir()
+	setWorkingDir(t, project)
 
 	cfg, err := Load()
 	if err != nil {
@@ -85,18 +95,15 @@ func TestInvalidIntEnvWarning(t *testing.T) {
 	}
 }
 
-func TestLoadConfigFileMerge(t *testing.T) {
+func TestLoadYAMLMerge(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
 
-	path := filepath.Join(home, ".config", "easy8")
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	fileCfg := Config{
-		BaseURL: "https://from-config",
-		APIKey:  "config-key",
+	global := Config{
+		BaseURL: "https://global.example.com",
+		APIKey:  "global-key",
 		Defaults: Defaults{
 			ProjectID:    1,
 			TrackerID:    2,
@@ -106,29 +113,155 @@ func TestLoadConfigFileMerge(t *testing.T) {
 			AssignedToID: 6,
 		},
 	}
+	writeConfigFile(t, filepath.Join(home, ".config", "easy8", "config.yaml"), global)
 
-	data, err := json.Marshal(fileCfg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	project := t.TempDir()
+	writeConfigFile(t, filepath.Join(project, ".easy8.yaml"), Config{
+		BaseURL: "https://local.example.com",
+		Defaults: Defaults{
+			ProjectID: 10,
+		},
+	})
+
+	nested := filepath.Join(project, "nested", "repo")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
 	}
-
-	if err := os.WriteFile(filepath.Join(path, "config.json"), data, 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	t.Setenv("EASY8_BASE_URL", "https://from-env")
+	setWorkingDir(t, nested)
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load error: %v", err)
 	}
-	if cfg.BaseURL != "https://from-env" {
+
+	if cfg.BaseURL != "https://local.example.com" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
-	if cfg.APIKey != "config-key" {
+	if cfg.APIKey != "global-key" {
 		t.Fatalf("APIKey = %q", cfg.APIKey)
 	}
-	if cfg.Defaults.ProjectID != 1 {
+	if cfg.Defaults.ProjectID != 10 {
 		t.Fatalf("ProjectID = %d", cfg.Defaults.ProjectID)
 	}
+	if cfg.Defaults.TrackerID != 2 {
+		t.Fatalf("TrackerID = %d", cfg.Defaults.TrackerID)
+	}
+}
+
+func TestEnvOverridesYAML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "https://env.example.com")
+	t.Setenv("EASY8_API_KEY", "env-key")
+
+	global := Config{
+		BaseURL: "https://global.example.com",
+		APIKey:  "global-key",
+	}
+	writeConfigFile(t, filepath.Join(home, ".config", "easy8", "config.yaml"), global)
+
+	project := t.TempDir()
+	writeConfigFile(t, filepath.Join(project, ".easy8.yaml"), Config{
+		BaseURL: "https://local.example.com",
+		APIKey:  "local-key",
+	})
+	setWorkingDir(t, project)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.BaseURL != "https://env.example.com" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.APIKey != "env-key" {
+		t.Fatalf("APIKey = %q", cfg.APIKey)
+	}
+}
+
+func TestSaveGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path, err := SaveGlobal(Config{BaseURL: "https://saved.example.com", APIKey: "saved-key"})
+	if err != nil {
+		t.Fatalf("SaveGlobal error: %v", err)
+	}
+
+	expected := filepath.Join(home, ".config", "easy8", "config.yaml")
+	if path != expected {
+		t.Fatalf("path = %q, want %q", path, expected)
+	}
+
+	loaded := readConfigFile(t, expected)
+	if loaded.BaseURL != "https://saved.example.com" {
+		t.Fatalf("BaseURL = %q", loaded.BaseURL)
+	}
+	if loaded.APIKey != "saved-key" {
+		t.Fatalf("APIKey = %q", loaded.APIKey)
+	}
+}
+
+func TestSaveLocal(t *testing.T) {
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	path, err := SaveLocal(Config{BaseURL: "https://local-save.example.com", APIKey: "local-key"})
+	if err != nil {
+		t.Fatalf("SaveLocal error: %v", err)
+	}
+
+	expected := filepath.Join(project, ".easy8.yaml")
+	if path != expected {
+		t.Fatalf("path = %q, want %q", path, expected)
+	}
+
+	loaded := readConfigFile(t, expected)
+	if loaded.BaseURL != "https://local-save.example.com" {
+		t.Fatalf("BaseURL = %q", loaded.BaseURL)
+	}
+	if loaded.APIKey != "local-key" {
+		t.Fatalf("APIKey = %q", loaded.APIKey)
+	}
+}
+
+func setWorkingDir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(old)
+	})
+}
+
+func writeConfigFile(t *testing.T, path string, cfg Config) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func readConfigFile(t *testing.T, path string) Config {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return cfg
 }

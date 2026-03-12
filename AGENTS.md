@@ -9,7 +9,7 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - Design for future entities without breaking CLI UX.
 
 ## API basics
-- Base URL: configurable (default for demo use: https://demo.easysoftware.com).
+- Base URL: configurable (default for demo use: https://demo.easy8.com).
 - Authentication:
   - Preferred: header api key `X-Redmine-API-Key`.
   - Optional fallback: query parameter `key`.
@@ -54,6 +54,13 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - `easy8 pbi list`
 - `easy8 pbi show`
 - `easy8 pbi update`
+- `easy8 auth status`
+- `easy8 auth login`
+- `easy8 auth logout`
+- `easy8 setup`
+- `easy8 skill`
+- `easy8 skill install`
+- `easy8 commands`
 - `easy8 version`
 
 ## Configuration
@@ -64,15 +71,17 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
     `EASY8_DEFAULT_STATUS_ID`, `EASY8_DEFAULT_PRIORITY_ID`,
     `EASY8_DEFAULT_AUTHOR_ID`, `EASY8_DEFAULT_ASSIGNED_TO_ID`
 - Invalid integer env vars produce a warning on stderr (not silently ignored).
-- Optional config file:
-  - `~/.config/easy8/config.json`
-  - Env vars override config values.
+- Optional config files:
+  - Global: `~/.config/easy8/config.yaml`
+  - Local: `.easy8.yaml` (current directory or parent)
+  - Env vars override both config files.
 - For local development, use `.env` file with `source ./setup_env.sh`.
 
 ## Output format
 - Human-readable table by default (list, search, create, update).
 - Key-value detail format for `issue show` and `pbi show`.
-- `--json` flag for machine-readable output (skills integration).
+- `--json` flag for envelope machine output (`ok`, `data`, `summary`, optional `breadcrumbs`).
+- `--quiet` flag for raw machine-readable output (API-shaped JSON).
 
 ## Validation
 - `--done-ratio` must be between 0 and 100.
@@ -93,8 +102,8 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Version
-- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=1.0.0" -o easy8 ./cmd/easy8`
-- Defaults to `dev` when not set.
+- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.0" -o easy8 ./cmd/easy8`
+- Defaults to `0.1.0` when not set.
 
 ## Extension guidance
 - Keep API client in a small internal package (e.g., `internal/api`).

@@ -1,3 +1,7 @@
 # Compiled binary
 easy8
 /.env
+/.easy8.yaml
+/.opencode/
+/.claude/
+/.codex/

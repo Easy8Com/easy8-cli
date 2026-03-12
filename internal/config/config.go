@@ -1,35 +1,48 @@
 package config
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"gopkg.in/yaml.v3"
+)
+
+const (
+	defaultBaseURL  = "https://demo.easy8.com"
+	localConfigFile = ".easy8.yaml"
 )
 
 type Defaults struct {
-	ProjectID    int `json:"project_id"`
-	TrackerID    int `json:"tracker_id"`
-	StatusID     int `json:"status_id"`
-	PriorityID   int `json:"priority_id"`
-	AuthorID     int `json:"author_id"`
-	AssignedToID int `json:"assigned_to_id"`
+	ProjectID    int `yaml:"project_id"`
+	TrackerID    int `yaml:"tracker_id"`
+	StatusID     int `yaml:"status_id"`
+	PriorityID   int `yaml:"priority_id"`
+	AuthorID     int `yaml:"author_id"`
+	AssignedToID int `yaml:"assigned_to_id"`
 }
 
 type Config struct {
-	BaseURL  string   `json:"base_url"`
-	APIKey   string   `json:"api_key"`
-	Defaults Defaults `json:"defaults"`
+	BaseURL  string   `yaml:"base_url"`
+	APIKey   string   `yaml:"api_key"`
+	Defaults Defaults `yaml:"defaults"`
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		BaseURL: "https://demo.easysoftware.com",
+		BaseURL: defaultBaseURL,
 	}
 
-	if fileCfg, err := readFileConfig(); err == nil {
+	if fileCfg, err := readGlobalConfig(); err == nil {
+		cfg = mergeConfig(cfg, fileCfg)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Config{}, err
+	}
+
+	if fileCfg, err := readLocalConfig(); err == nil {
 		cfg = mergeConfig(cfg, fileCfg)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Config{}, err
@@ -39,21 +52,65 @@ func Load() (Config, error) {
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "config warning: %s\n", w)
 	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = defaultBaseURL
+	}
 	return cfg, nil
 }
 
-func readFileConfig() (Config, error) {
+func SaveGlobal(cfg Config) (string, error) {
+	path, err := configPath()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if err := writeConfig(path, cfg); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func SaveLocal(cfg Config) (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(wd, localConfigFile)
+	if err := writeConfig(path, cfg); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func readGlobalConfig() (Config, error) {
 	path, err := configPath()
 	if err != nil {
 		return Config{}, err
 	}
+	return readConfig(path)
+}
+
+func readLocalConfig() (Config, error) {
+	path, err := localConfigPath()
+	if err != nil {
+		return Config{}, err
+	}
+	if path == "" {
+		return Config{}, os.ErrNotExist
+	}
+	return readConfig(path)
+}
+
+func readConfig(path string) (Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return Config{}, err
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(file)
+	decoder := yaml.NewDecoder(file)
 	var cfg Config
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, err
@@ -61,12 +118,52 @@ func readFileConfig() (Config, error) {
 	return cfg, nil
 }
 
+func writeConfig(path string, cfg Config) error {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = defaultBaseURL
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if !bytes.HasSuffix(data, []byte("\n")) {
+		data = append(data, '\n')
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
 func configPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "easy8", "config.json"), nil
+	return filepath.Join(home, ".config", "easy8", "config.yaml"), nil
+}
+
+func localConfigPath() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		path := filepath.Join(dir, localConfigFile)
+		_, err := os.Stat(path)
+		if err == nil {
+			return path, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", nil
 }
 
 func applyEnv(cfg *Config) []string {

@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"easy8-cli/internal/api"
+	"easy8-cli/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRunNoArgs(t *testing.T) {
@@ -28,7 +31,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "dev") {
+	if !strings.Contains(stdout, "0.1.0") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -39,6 +42,246 @@ func TestRunUnknownCommand(t *testing.T) {
 	code := Run([]string{"nope"})
 	if code != 2 {
 		t.Fatalf("code = %d", code)
+	}
+}
+
+func TestSkillCommandPrintsEmbedded(t *testing.T) {
+	setTestHome(t)
+
+	stdout, stderr, code := captureRun(t, []string{"skill"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "# Easy8 CLI") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestSkillInstallLocalOpenCode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	stdout, stderr, code := captureRun(t, []string{"skill", "install", "--target", "opencode", "--local"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Skill installed") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	path := filepath.Join(project, ".opencode", "skills", "easy8-cli", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read installed skill: %v", err)
+	}
+	if !strings.Contains(string(data), "name: easy8-cli") {
+		t.Fatalf("unexpected skill content")
+	}
+}
+
+func TestCommandsJSONOutput(t *testing.T) {
+	setTestHome(t)
+
+	stdout, stderr, code := captureRun(t, []string{"commands", "--json"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	var cmds []commandInfo
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &cmds); err != nil {
+		t.Fatalf("json data error: %v", err)
+	}
+	if len(cmds) == 0 {
+		t.Fatalf("expected command catalog")
+	}
+	foundIssue := false
+	for _, cmd := range cmds {
+		if cmd.Name == "easy8 issue" {
+			foundIssue = true
+			break
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("expected issue command in catalog")
+	}
+}
+
+func TestAuthLoginStatusLogoutFlow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+
+	stdout, stderr, code := captureRun(t, []string{"auth", "status", "--quiet"})
+	if code != 0 {
+		t.Fatalf("status code=%d stderr=%s", code, stderr)
+	}
+	var status map[string]any
+	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
+		t.Fatalf("status json error: %v", err)
+	}
+	if status["authenticated"] != false {
+		t.Fatalf("expected unauthenticated status: %+v", status)
+	}
+
+	_, stderr, code = captureRun(t, []string{"auth", "login", "--api-key", "secret-123", "--global", "--quiet"})
+	if code != 0 {
+		t.Fatalf("login code=%d stderr=%s", code, stderr)
+	}
+
+	stdout, stderr, code = captureRun(t, []string{"auth", "status", "--quiet"})
+	if code != 0 {
+		t.Fatalf("status code=%d stderr=%s", code, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
+		t.Fatalf("status json error: %v", err)
+	}
+	if status["authenticated"] != true {
+		t.Fatalf("expected authenticated status: %+v", status)
+	}
+
+	_, stderr, code = captureRun(t, []string{"auth", "logout", "--global", "--quiet"})
+	if code != 0 {
+		t.Fatalf("logout code=%d stderr=%s", code, stderr)
+	}
+
+	stdout, stderr, code = captureRun(t, []string{"auth", "status", "--quiet"})
+	if code != 0 {
+		t.Fatalf("status code=%d stderr=%s", code, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
+		t.Fatalf("status json error: %v", err)
+	}
+	if status["authenticated"] != false {
+		t.Fatalf("expected unauthenticated status after logout: %+v", status)
+	}
+}
+
+func TestSetupNonInteractiveGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+
+	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--global", "--base-url", "https://example.com", "--api-key", "abc", "--project-id", "10"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Configuration saved to") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	path := filepath.Join(home, ".config", "easy8", "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var saved config.Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if saved.BaseURL != "https://example.com" {
+		t.Fatalf("base_url = %q", saved.BaseURL)
+	}
+	if saved.APIKey != "abc" {
+		t.Fatalf("api_key = %q", saved.APIKey)
+	}
+	if saved.Defaults.ProjectID != 10 {
+		t.Fatalf("project_id = %d", saved.Defaults.ProjectID)
+	}
+}
+
+func TestSetupNonInteractiveLocal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--local", "--base-url", "https://local.example.com", "--api-key", "local-key"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Configuration saved to") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	path := filepath.Join(project, ".easy8.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var saved config.Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if saved.BaseURL != "https://local.example.com" {
+		t.Fatalf("base_url = %q", saved.BaseURL)
+	}
+	if saved.APIKey != "local-key" {
+		t.Fatalf("api_key = %q", saved.APIKey)
+	}
+}
+
+func TestSetupNonInteractiveValidation(t *testing.T) {
+	setTestHome(t)
+
+	_, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--base-url", "https://example.com"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "--api-key is required in --non-interactive mode") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestSetupTargetConflict(t *testing.T) {
+	setTestHome(t)
+
+	_, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--global", "--local", "--base-url", "https://example.com", "--api-key", "abc"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "--global and --local cannot be used together") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestPromptScopeDefaultsToGlobal(t *testing.T) {
+	output := &bytes.Buffer{}
+	scope, err := promptScope(strings.NewReader("\n"), output)
+	if err != nil {
+		t.Fatalf("promptScope error: %v", err)
+	}
+	if scope != "global" {
+		t.Fatalf("scope = %q", scope)
+	}
+}
+
+func TestPromptScopeAcceptsLocal(t *testing.T) {
+	output := &bytes.Buffer{}
+	scope, err := promptScope(strings.NewReader("local\n"), output)
+	if err != nil {
+		t.Fatalf("promptScope error: %v", err)
+	}
+	if scope != "local" {
+		t.Fatalf("scope = %q", scope)
+	}
+}
+
+func TestPromptScopeRejectsInvalid(t *testing.T) {
+	output := &bytes.Buffer{}
+	_, err := promptScope(strings.NewReader("xxx\n"), output)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid scope") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -112,11 +355,45 @@ func TestIssueListJSONOutput(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.IssueListResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if !env.OK {
+		t.Fatalf("expected ok envelope")
+	}
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if len(resp.Issues) != 1 || resp.Issues[0].ID != 101 {
 		t.Fatalf("unexpected issues: %+v", resp.Issues)
+	}
+}
+
+func TestIssueListQuietOutput(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "list", "--quiet"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	var resp api.IssueListResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("quiet json error: %v", err)
+	}
+	if len(resp.Issues) != 1 {
+		t.Fatalf("unexpected issues: %+v", resp.Issues)
+	}
+}
+
+func TestIssueListJSONQuietConflict(t *testing.T) {
+	server := newTestServer(t)
+	setTestEnv(t, server.URL)
+
+	_, stderr, code := captureRun(t, []string{"issue", "list", "--json", "--quiet"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "--json and --quiet cannot be used together") {
+		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
 
@@ -130,8 +407,9 @@ func TestIssueCreateJSONOutput(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.IssueResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if resp.Issue.ID != 202 {
 		t.Fatalf("unexpected issue id: %d", resp.Issue.ID)
@@ -212,8 +490,9 @@ func TestIssueShowWithPositionalID(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.IssueResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if resp.Issue.ID != 101 {
 		t.Fatalf("issue id = %d", resp.Issue.ID)
@@ -229,8 +508,9 @@ func TestIssueShowJSONOutput(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.IssueResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if resp.Issue.ID != 101 {
 		t.Fatalf("issue id = %d", resp.Issue.ID)
@@ -310,8 +590,9 @@ func TestIssueShowWithJournalsJSON(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.IssueResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if len(resp.Issue.Journals) != 2 {
 		t.Fatalf("journals count = %d", len(resp.Issue.Journals))
@@ -418,8 +699,9 @@ func TestPBIListJSONOutput(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.PBIListResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if len(resp.PBIs) != 1 || resp.PBIs[0].ID != 1 {
 		t.Fatalf("unexpected: %+v", resp)
@@ -470,8 +752,9 @@ func TestPBIShowWithPositionalID(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.PBIResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if resp.PBI.ID != 1 {
 		t.Fatalf("id = %d", resp.PBI.ID)
@@ -487,8 +770,9 @@ func TestPBIShowJSONOutput(t *testing.T) {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
 	var resp api.PBIResponse
-	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
-		t.Fatalf("json error: %v", err)
+	env := decodeEnvelope(t, stdout)
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("json data error: %v", err)
 	}
 	if resp.PBI.ID != 1 {
 		t.Fatalf("id = %d", resp.PBI.ID)
@@ -562,6 +846,20 @@ func setTestHome(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 }
 
+func setWorkingDir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(old)
+	})
+}
+
 func setTestEnv(t *testing.T, baseURL string) {
 	t.Helper()
 	setTestHome(t)
@@ -605,6 +903,26 @@ func captureRun(t *testing.T, args []string) (string, string, int) {
 	_ = stderrReader.Close()
 
 	return stdout.String(), stderr.String(), code
+}
+
+type testEnvelope struct {
+	OK          bool               `json:"ok"`
+	Data        json.RawMessage    `json:"data"`
+	Summary     string             `json:"summary,omitempty"`
+	Breadcrumbs []outputBreadcrumb `json:"breadcrumbs,omitempty"`
+	Context     map[string]any     `json:"context,omitempty"`
+}
+
+func decodeEnvelope(t *testing.T, raw string) testEnvelope {
+	t.Helper()
+	var env testEnvelope
+	if err := json.Unmarshal([]byte(raw), &env); err != nil {
+		t.Fatalf("envelope json error: %v", err)
+	}
+	if len(env.Data) == 0 {
+		t.Fatalf("envelope missing data: %s", raw)
+	}
+	return env
 }
 
 func newTestServer(t *testing.T) *httptest.Server {

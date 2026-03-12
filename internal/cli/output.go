@@ -9,6 +9,20 @@ import (
 	"easy8-cli/internal/api"
 )
 
+type outputBreadcrumb struct {
+	Action      string `json:"action"`
+	Cmd         string `json:"cmd"`
+	Description string `json:"description"`
+}
+
+type outputEnvelope struct {
+	OK          bool               `json:"ok"`
+	Data        any                `json:"data,omitempty"`
+	Summary     string             `json:"summary,omitempty"`
+	Breadcrumbs []outputBreadcrumb `json:"breadcrumbs,omitempty"`
+	Context     map[string]any     `json:"context,omitempty"`
+}
+
 func outputJSON(value any) int {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -17,6 +31,17 @@ func outputJSON(value any) int {
 		return 1
 	}
 	return 0
+}
+
+func outputJSONEnvelope(data any, summary string, breadcrumbs []outputBreadcrumb, context map[string]any) int {
+	env := outputEnvelope{
+		OK:          true,
+		Data:        data,
+		Summary:     summary,
+		Breadcrumbs: breadcrumbs,
+		Context:     context,
+	}
+	return outputJSON(env)
 }
 
 func outputIssues(issues []api.Issue) int {

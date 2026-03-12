@@ -25,7 +25,7 @@ go build -o easy8 ./cmd/easy8
 With version stamp:
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=1.0.0" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.0" -o easy8 ./cmd/easy8
 ```
 
 ## Run
@@ -44,10 +44,35 @@ go run ./cmd/easy8 issue list --limit 10
 
 ## Configuration
 
+Recommended (writes YAML config file):
+
+```bash
+easy8 setup
+```
+
+Non-interactive examples:
+
+```bash
+easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>"
+easy8 setup --non-interactive --local --base-url "https://demo.easy8.com" --api-key "<your-key>"
+```
+
+Config files:
+
+- Global: `~/.config/easy8/config.yaml`
+- Local (project override): `.easy8.yaml`
+
+Load priority (highest to lowest):
+
+1. Environment variables
+2. Local config `.easy8.yaml`
+3. Global config `~/.config/easy8/config.yaml`
+4. Built-in defaults
+
 Environment variables:
 
 ```bash
-export EASY8_BASE_URL="https://demo.easysoftware.com"
+export EASY8_BASE_URL="https://demo.easy8.com"
 export EASY8_API_KEY="<your-key>"
 ```
 
@@ -70,25 +95,6 @@ For local development, copy `.env.example` to `.env` and use:
 source ./setup_env.sh
 ```
 
-Optional config file (env overrides config):
-
-`~/.config/easy8/config.json`
-
-```json
-{
-  "base_url": "https://demo.easysoftware.com",
-  "api_key": "<your-key>",
-  "defaults": {
-    "project_id": 1,
-    "tracker_id": 1,
-    "status_id": 1,
-    "priority_id": 1,
-    "author_id": 1,
-    "assigned_to_id": 1
-  }
-}
-```
-
 ## Usage
 
 ### Agent skill (source of truth)
@@ -101,10 +107,18 @@ skills/easy8-cli/SKILL.md
 
 The skill is agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.
 
-In your current local setup, copy this file into your OpenCode workspace skill path:
+Install from CLI:
 
 ```bash
-cp skills/easy8-cli/SKILL.md /home/petr/_projects/devel/.opencode/skills/easy8-cli/SKILL.md
+easy8 skill install --target opencode
+easy8 skill install --target claude
+easy8 skill install --target codex --local
+```
+
+Print embedded skill content:
+
+```bash
+easy8 skill
 ```
 
 Examples of prompts:
@@ -118,9 +132,9 @@ najdi pbi onboarding
 Typical command mapping used by the skill:
 
 ```bash
-easy8 issue show 1234 --json
-easy8 pbi show 42 --json
-easy8 pbi list --q "onboarding" --json
+easy8 issue show 1234 --quiet
+easy8 pbi show 42 --quiet
+easy8 pbi list --q "onboarding" --quiet
 ```
 
 If the copied skill is not visible immediately, restart the OpenCode session so the skill index reloads.
@@ -131,6 +145,7 @@ If the copied skill is not visible immediately, restart the OpenCode session so 
 easy8 issue show 123
 easy8 issue show 123 --include journals,attachments
 easy8 issue show 123 --json
+easy8 issue show 123 --quiet
 easy8 issue show --id 123  # legacy compatible form
 ```
 
@@ -204,6 +219,7 @@ Filters: `--status` (to_do, realization, done, deleted), `--author-id`, `--board
 ```bash
 easy8 pbi show 42
 easy8 pbi show 42 --json
+easy8 pbi show 42 --quiet
 easy8 pbi show --id 42  # legacy compatible form
 ```
 
@@ -211,6 +227,7 @@ easy8 pbi show --id 42  # legacy compatible form
 
 ```bash
 easy8 pbi update 42 --status done
+easy8 pbi update 42 --status done --json
 easy8 pbi update 42 --name "New name" --estimate 5 --description "Details"
 easy8 pbi update --id 42 --status done  # legacy compatible form
 ```
@@ -223,15 +240,44 @@ Updatable fields: `--name`, `--description`, `--status`, `--estimate`.
 easy8 version
 ```
 
+### Auth helpers
+
+```bash
+easy8 auth status
+easy8 auth login --api-key "<your-key>"
+easy8 auth logout
+```
+
+For local auth in current repo:
+
+```bash
+easy8 auth login --api-key "<your-key>" --local
+easy8 auth logout --local
+```
+
+### Command catalog (for agents)
+
+```bash
+easy8 commands --json
+easy8 commands --quiet
+```
+
 ### Machine readable output
 
-Any command supports `--json`:
+Entity commands support both machine modes:
+
+- `--json`: envelope format (`ok`, `data`, `summary`, optional `breadcrumbs/context`)
+- `--quiet`: raw API-shaped JSON data
 
 ```bash
 easy8 issue list --json
+easy8 issue list --quiet
 easy8 issue show 123 --json
+easy8 issue show 123 --quiet
 easy8 pbi list --json
+easy8 pbi list --quiet
 easy8 pbi show 42 --json
+easy8 pbi show 42 --quiet
 ```
 
 ## Testing
