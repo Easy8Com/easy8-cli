@@ -2,6 +2,8 @@
 
 Small Go CLI for Easy8. Current scope: Issues and Product Backlog Items (PBIs).
 
+Official website: https://easy8.com
+
 ## Goals
 
 - Create, show, list, search, and update issues.

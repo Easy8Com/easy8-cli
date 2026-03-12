@@ -7,6 +7,7 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - Provide a small, fast Go CLI for Easy8.
 - Current scope: Issues (tasks) and Product Backlog Items (PBIs).
 - Design for future entities without breaking CLI UX.
+- Product website: https://easy8.com
 
 ## API basics
 - Base URL: configurable (default for demo use: https://demo.easy8.com).
