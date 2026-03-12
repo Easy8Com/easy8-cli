@@ -75,7 +75,6 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   - Global: `~/.config/easy8/config.yaml`
   - Local: `.easy8.yaml` (current directory or parent)
   - Env vars override both config files.
-- For local development, use `.env` file with `source ./setup_env.sh`.
 
 ## Output format
 - Human-readable table by default (list, search, create, update).
@@ -96,7 +95,7 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - Unit tests: `go test ./...`
 - Integration tests (require running Easy8 server):
   ```
-  source ./setup_env.sh && go test -tags integration -v -timeout 600s ./internal/api/
+  EASY8_BASE_URL="https://demo.easy8.com" EASY8_API_KEY="<your-key>" go test -tags integration -v -timeout 600s ./internal/api/
   ```
 - Integration tests use build tag `//go:build integration` and skip automatically
   when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.

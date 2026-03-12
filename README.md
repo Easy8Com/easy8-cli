@@ -87,13 +87,13 @@ export EASY8_DEFAULT_AUTHOR_ID=1
 export EASY8_DEFAULT_ASSIGNED_TO_ID=1
 ```
 
-Invalid integer values produce a warning on stderr.
-
-For local development, copy `.env.example` to `.env` and use:
+You can also save these defaults through setup flags:
 
 ```bash
-source ./setup_env.sh
+easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 1
 ```
+
+Invalid integer values produce a warning on stderr.
 
 ## Usage
 
@@ -124,9 +124,9 @@ easy8 skill
 Examples of prompts:
 
 ```text
-oprav ukol #1234
-oprav pbi #42
-najdi pbi onboarding
+fix issue #1234
+fix pbi #42
+find pbi onboarding
 ```
 
 Typical command mapping used by the skill:
@@ -137,7 +137,7 @@ easy8 pbi show 42 --quiet
 easy8 pbi list --q "onboarding" --quiet
 ```
 
-If the copied skill is not visible immediately, restart the OpenCode session so the skill index reloads.
+If the installed skill is not visible immediately, restart the OpenCode session so the skill index reloads.
 
 ### Show issue detail
 
@@ -291,7 +291,7 @@ go test ./...
 Integration tests (require a running Easy8 server):
 
 ```bash
-source ./setup_env.sh && go test -tags integration -v -timeout 600s ./internal/api/
+EASY8_BASE_URL="https://demo.easy8.com" EASY8_API_KEY="<your-key>" go test -tags integration -v -timeout 600s ./internal/api/
 ```
 
 Integration tests use the `//go:build integration` build tag and skip
