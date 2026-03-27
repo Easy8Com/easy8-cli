@@ -1,5 +1,13 @@
 # easy8-cli
 
+```text
+ _____    _    ____ __   __  ___      ____ _     ___
+| ____|  / \  / ___|\ \ / / ( _ )    / ___| |   |_ _|
+|  _|   / _ \ \___ \ \ V /  / _ \/\ | |   | |    | |
+| |___ / ___ \ ___) | | |  | (_>  < | |___| |___ | |
+|_____/_/   \_\____/  |_|   \___/\/  \____|_____|___|
+```
+
 Small Go CLI for Easy8. Current scope: Issues and Product Backlog Items (PBIs).
 
 Official website: https://easy8.com
@@ -13,32 +21,60 @@ Official website: https://easy8.com
 
 ## Requirements
 
-- Go 1.22+
 - Easy8 API key
+- Go 1.22+ (only if building from source)
 
-## Install
+## Quick Start
 
-Build locally:
+### macOS / Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.sh | bash
+easy8 setup
+easy8 issue list --limit 10
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.ps1 | iex
+easy8 setup
+easy8 issue list --limit 10
+```
+
+The installers detect OS/architecture, download the matching binary from GitHub Releases, and verify SHA-256 checksums.
+If no release is published yet, use the source build option below.
+
+<details>
+<summary>Other installation methods</summary>
+
+**GitHub Release (manual):**
+
+1. Download the right binary from [Releases](https://github.com/Easy8Com/easy8-cli/releases).
+2. Download `checksums.txt` from the same release and verify SHA-256.
+3. Rename binary to `easy8` (or `easy8.exe`) and move it to a directory on your `PATH`.
+
+**Build locally:**
 
 ```bash
 go build -o easy8 ./cmd/easy8
 ```
 
-With version stamp:
+**Build with version stamp:**
 
 ```bash
 go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.0" -o easy8 ./cmd/easy8
 ```
 
-## Run
+</details>
 
-Run the compiled binary:
+## Run
 
 ```bash
 ./easy8 issue list --limit 10
 ```
 
-Or run without building:
+Or run without building from source:
 
 ```bash
 go run ./cmd/easy8 issue list --limit 10
