@@ -57,6 +57,24 @@ func TestSkillCommandPrintsEmbedded(t *testing.T) {
 	}
 }
 
+func TestSkillCommandIncludesInstallGuidance(t *testing.T) {
+	setTestHome(t)
+
+	stdout, stderr, code := captureRun(t, []string{"skill"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "curl -fsSL https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.sh | bash") {
+		t.Fatalf("expected linux install guidance in skill output")
+	}
+	if !strings.Contains(stdout, "irm https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.ps1 | iex") {
+		t.Fatalf("expected windows install guidance in skill output")
+	}
+	if strings.Contains(stdout, "go run ./cmd/easy8") {
+		t.Fatalf("did not expect go run fallback in skill output")
+	}
+}
+
 func TestSkillInstallLocalOpenCode(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

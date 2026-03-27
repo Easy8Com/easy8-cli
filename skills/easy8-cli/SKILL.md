@@ -1,42 +1,51 @@
 ---
 name: easy8-cli
-description: "Use Easy8 CLI to fetch and update Issue/PBI details from user requests like 'fix issue #124' or 'fix pbi #42'."
+description: "Use easy8 CLI to fetch and update Easy8 issues and PBIs. Verify easy8 is installed and provide install/setup steps when missing."
 ---
 
 # Easy8 CLI
 
-Use this skill when a user asks to work with Easy8 tasks/issues/PBIs and details should be loaded via the local `easy8` CLI.
+Use this skill when user asks to read or update Easy8 tasks, issues, tickets, or PBIs.
 
-## Scope
+## Agent Invariants (MUST)
 
-- Fetch issue detail
-- Search/list issues
-- Fetch PBI detail
-- List/update PBIs
-- Prepare short actionable brief for follow-up implementation work
+1. Run Runtime Preflight before any easy8 command.
+2. If easy8 is missing, stop and return installation steps.
+3. Prefer machine output with `--quiet`; use `--json` when summary/breadcrumbs help.
+4. Never update Issue/PBI unless user explicitly asks for a field change.
+5. For missing ID or ambiguous search results, show top matches and ask one focused disambiguation question.
 
-## Invocation Hints
+## Runtime Preflight (MUST)
 
-- Use this skill explicitly for prompts such as:
-  - `fetch issue details #1234`
-  - `fix issue #1234`
-  - `fetch pbi details #42`
-- If numeric ID is present, go directly to `show <id> --quiet`.
-- If ID is not present, run search/list command first and disambiguate from top hits.
+Run:
 
-## CLI Location
+```bash
+easy8 version
+```
 
-Run commands in the `easy8-cli` repository root.
+If preflight fails because `easy8` is unavailable, stop and return this guidance:
 
-Prefer compiled binary if present:
+macOS/Linux:
 
-- `./easy8 ...`
+```bash
+curl -fsSL https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.sh | bash
+easy8 version
+easy8 setup
+```
 
-Fallback:
+Windows (PowerShell):
 
-- `go run ./cmd/easy8 ...`
+```powershell
+irm https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.ps1 | iex
+easy8 version
+easy8 setup
+```
 
-## Prerequisites
+If `easy8` is still not found after install, ask user to restart terminal/session so PATH reloads.
+
+Do not use source-build fallbacks in normal user flows.
+
+## Authentication / Config Prerequisites
 
 Required config or env:
 
@@ -46,16 +55,20 @@ Required config or env:
 Quick check:
 
 ```bash
-go run ./cmd/easy8 --help
-go run ./cmd/easy8 version
+easy8 auth status --quiet
 ```
 
-If auth/config is missing, stop and ask for `easy8 setup` or env setup with one focused message.
+If auth/config is missing, stop and ask for one of:
+
+- `easy8 setup`
+- set `EASY8_BASE_URL` and `EASY8_API_KEY`.
 
 ## Intent Routing
 
 - `task`, `issue`, `ticket` -> issue commands
 - `pbi`, `product backlog item`, `easy product backlog item` -> pbi commands
+- verbs `fetch`, `show`, `list`, `search`, `find`, `fix` -> read flow
+- verbs `update`, `change`, `set`, `rename`, `mark` -> update flow
 
 ID parsing:
 
@@ -66,64 +79,76 @@ ID parsing:
 
 ### Issue detail
 
-If user says: `fix issue #124`
-
 ```bash
-go run ./cmd/easy8 issue show 124 --quiet
+easy8 issue show 124 --quiet
 ```
 
 ### Issue search when ID missing
 
 ```bash
-go run ./cmd/easy8 issue search --q "<user text>" --quiet
+easy8 issue search --q "<user text>" --quiet
 ```
+
+### Issue update (only explicit user request)
+
+```bash
+easy8 issue update 124 --status-id 5 --quiet
+easy8 issue update 124 --done-ratio 80 --notes "progress update" --quiet
+easy8 issue update 124 --subject "New title" --description "Updated text" --quiet
+```
+
+Issue update expects IDs for lookup fields:
+
+- `--status-id`
+- `--priority-id`
+- `--assigned-to-id`
 
 ### PBI detail
 
-If user says: `fix pbi #42`
-
 ```bash
-go run ./cmd/easy8 pbi show 42 --quiet
+easy8 pbi show 42 --quiet
 ```
 
 ### PBI search/list when ID missing
 
 ```bash
-go run ./cmd/easy8 pbi list --q "<user text>" --quiet
+easy8 pbi list --q "<user text>" --quiet
 ```
 
 ### PBI update (only when explicitly requested)
 
 ```bash
-go run ./cmd/easy8 pbi update 42 --status done --quiet
+easy8 pbi update 42 --status done --quiet
+easy8 pbi update 42 --name "New name" --estimate 5 --description "Details" --quiet
 ```
 
 ## Output Format
 
-- `--json` returns envelope: `ok`, `data`, `summary`, optional `breadcrumbs/context`.
-- `--quiet` returns raw API-shaped JSON without envelope.
-- For skill automation, prefer `--quiet` for parsing and `--json` for rich UX hints.
+- `--quiet`: raw API-shaped JSON (preferred for parsing).
+- `--json`: envelope with `ok`, `data`, `summary`, optional `breadcrumbs/context`.
 
 After fetching entity, return a short brief:
 
-- `Entity`: Issue or PBI
-- `ID`
-- `Title` (`subject` for issue, `name` for pbi)
-- `Status`
-- `Assignee/Owner`
-- `Description` (shortened)
-- `Related` (linked issues for PBI when available)
-- `Next Action` (what to implement or clarify)
+- Entity (Issue or PBI)
+- ID
+- Title (`subject` for issue, `name` for pbi)
+- Status
+- Assignee/Owner
+- Description (shortened)
+- Related (linked issues for PBI when available)
+- Next Action
 
 ## Safety Rules
 
 - Always prefer machine output (`--quiet` or `--json`) for agent parsing.
 - Do not update Issue/PBI unless user explicitly asks to change fields.
-- For ambiguous text without ID and with multiple search hits, provide top hits and ask one focused disambiguation question.
+- For ambiguous text without ID and with multiple search hits, show top hits and ask one focused disambiguation question.
 - If entity is not found, report that directly and show the exact command used.
+- If update intent has no concrete target field/value, ask one focused clarifying question.
 
 ## Examples
 
-- `fix issue #124` -> `issue show 124 --quiet`
-- `find pbi onboarding` -> `pbi list --q "onboarding" --quiet`
-- `set pbi #42 to done` -> `pbi update 42 --status done --quiet`
+- `fix issue #124` -> `easy8 issue show 124 --quiet`
+- `find pbi onboarding` -> `easy8 pbi list --q "onboarding" --quiet`
+- `set pbi #42 to done` -> `easy8 pbi update 42 --status done --quiet`
+- `change issue #123 done ratio to 80` -> `easy8 issue update 123 --done-ratio 80 --quiet`

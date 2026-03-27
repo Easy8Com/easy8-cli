@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"easy8-cli/internal/config"
-	"easy8-cli/internal/skills"
+	"easy8-cli/skills"
 )
 
 type commandInfo struct {
