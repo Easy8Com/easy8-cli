@@ -52,19 +52,34 @@ type Attachment struct {
 	CreatedOn   string    `json:"created_on"`
 }
 
+type IssueUpload struct {
+	Token       string `json:"token"`
+	Filename    string `json:"filename"`
+	Description string `json:"description,omitempty"`
+}
+
+type Upload struct {
+	Token string `json:"token"`
+}
+
+type UploadResponse struct {
+	Upload Upload `json:"upload"`
+}
+
 type IssueInput struct {
-	Subject      *string `json:"subject,omitempty"`
-	ProjectID    *int    `json:"project_id,omitempty"`
-	TrackerID    *int    `json:"tracker_id,omitempty"`
-	StatusID     *int    `json:"status_id,omitempty"`
-	PriorityID   *int    `json:"priority_id,omitempty"`
-	AuthorID     *int    `json:"author_id,omitempty"`
-	AssignedToID *int    `json:"assigned_to_id,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	StartDate    *string `json:"start_date,omitempty"`
-	DueDate      *string `json:"due_date,omitempty"`
-	DoneRatio    *int    `json:"done_ratio,omitempty"`
-	Notes        *string `json:"notes,omitempty"`
+	Subject      *string       `json:"subject,omitempty"`
+	ProjectID    *int          `json:"project_id,omitempty"`
+	TrackerID    *int          `json:"tracker_id,omitempty"`
+	StatusID     *int          `json:"status_id,omitempty"`
+	PriorityID   *int          `json:"priority_id,omitempty"`
+	AuthorID     *int          `json:"author_id,omitempty"`
+	AssignedToID *int          `json:"assigned_to_id,omitempty"`
+	Description  *string       `json:"description,omitempty"`
+	StartDate    *string       `json:"start_date,omitempty"`
+	DueDate      *string       `json:"due_date,omitempty"`
+	DoneRatio    *int          `json:"done_ratio,omitempty"`
+	Notes        *string       `json:"notes,omitempty"`
+	Uploads      []IssueUpload `json:"uploads,omitempty"`
 }
 
 type IssueRequest struct {

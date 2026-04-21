@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,6 +111,46 @@ func TestListIssuesByIDs(t *testing.T) {
 	}
 }
 
+func TestUploadAttachment(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.URL.Path != "/uploads.json" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("filename") != "build.log" {
+			t.Fatalf("filename = %s", r.URL.Query().Get("filename"))
+		}
+		if r.Header.Get("Content-Type") != "application/octet-stream" {
+			t.Fatalf("content-type = %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("X-Redmine-API-Key") != "key" {
+			t.Fatalf("api key = %s", r.Header.Get("X-Redmine-API-Key"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if string(body) != "hello upload" {
+			t.Fatalf("body = %q", string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"upload":{"token":"123.abc"}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	resp, err := client.UploadAttachment(context.Background(), "build.log", strings.NewReader("hello upload"))
+	if err != nil {
+		t.Fatalf("UploadAttachment error: %v", err)
+	}
+	if resp.Upload.Token != "123.abc" {
+		t.Fatalf("token = %q", resp.Upload.Token)
+	}
+}
+
 func TestCreateIssueSendsBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -134,6 +175,51 @@ func TestCreateIssueSendsBody(t *testing.T) {
 	input := IssueInput{
 		Subject:   &subject,
 		ProjectID: &projectID,
+	}
+	resp, err := client.CreateIssue(context.Background(), input)
+	if err != nil {
+		t.Fatalf("CreateIssue error: %v", err)
+	}
+	if resp.Issue.ID != 10 {
+		t.Fatalf("issue id = %d", resp.Issue.ID)
+	}
+}
+
+func TestCreateIssueWithUploadsSendsBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(request.Issue.Uploads) != 1 {
+			t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+		}
+		upload := request.Issue.Uploads[0]
+		if upload.Token != "123.abc" {
+			t.Fatalf("upload token = %q", upload.Token)
+		}
+		if upload.Filename != "build.log" {
+			t.Fatalf("upload filename = %q", upload.Filename)
+		}
+		if upload.Description != "Build output" {
+			t.Fatalf("upload description = %q", upload.Description)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issue":{"id":10,"subject":"New"}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	subject := "New"
+	projectID := 1
+	input := IssueInput{
+		Subject:   &subject,
+		ProjectID: &projectID,
+		Uploads: []IssueUpload{{
+			Token:       "123.abc",
+			Filename:    "build.log",
+			Description: "Build output",
+		}},
 	}
 	resp, err := client.CreateIssue(context.Background(), input)
 	if err != nil {
@@ -294,6 +380,46 @@ func TestUpdateIssueEmptyResponse(t *testing.T) {
 		t.Fatalf("server received %s, want PUT", receivedMethod)
 	}
 	// Empty response means zero-value issue.
+	if resp.Issue.ID != 0 {
+		t.Fatalf("expected zero ID from empty response, got %d", resp.Issue.ID)
+	}
+}
+
+func TestUpdateIssueWithUploadsSendsBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		var request IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(request.Issue.Uploads) != 1 {
+			t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+		}
+		upload := request.Issue.Uploads[0]
+		if upload.Token != "456.def" {
+			t.Fatalf("upload token = %q", upload.Token)
+		}
+		if upload.Filename != "error.log" {
+			t.Fatalf("upload filename = %q", upload.Filename)
+		}
+		if upload.Description != "Failure log" {
+			t.Fatalf("upload description = %q", upload.Description)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
+	resp, err := client.UpdateIssue(context.Background(), 42, IssueInput{Uploads: []IssueUpload{{
+		Token:       "456.def",
+		Filename:    "error.log",
+		Description: "Failure log",
+	}}})
+	if err != nil {
+		t.Fatalf("UpdateIssue error: %v", err)
+	}
 	if resp.Issue.ID != 0 {
 		t.Fatalf("expected zero ID from empty response, got %d", resp.Issue.ID)
 	}

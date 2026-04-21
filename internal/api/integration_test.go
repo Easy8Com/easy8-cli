@@ -130,12 +130,39 @@ func TestIntegrationCreateUpdateIssue(t *testing.T) {
 	}
 	t.Logf("Created issue #%d", issueID)
 
+	attachmentFile, err := os.CreateTemp(t.TempDir(), "easy8-attachment-*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer attachmentFile.Close()
+	attachmentContent := "Attached by easy8-cli integration test."
+	if _, err := attachmentFile.WriteString(attachmentContent); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if _, err := attachmentFile.Seek(0, 0); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+	attachmentInfo, err := attachmentFile.Stat()
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	attachmentDescription := "Attached by integration test."
+	uploadResp, err := client.UploadAttachment(ctx, attachmentInfo.Name(), attachmentFile)
+	if err != nil {
+		t.Fatalf("UploadAttachment: %v", err)
+	}
+
 	// Update
 	updatedSubject := "[integration-test] Updated smoke test"
 	notes := "Updated by integration test."
 	updateInput := IssueInput{
 		Subject: &updatedSubject,
 		Notes:   &notes,
+		Uploads: []IssueUpload{{
+			Token:       uploadResp.Upload.Token,
+			Filename:    attachmentInfo.Name(),
+			Description: attachmentDescription,
+		}},
 	}
 
 	_, err = client.UpdateIssue(ctx, issueID, updateInput)
@@ -144,12 +171,26 @@ func TestIntegrationCreateUpdateIssue(t *testing.T) {
 	}
 
 	// Verify the update actually took effect by re-fetching.
-	getResp, err := client.GetIssue(ctx, issueID, nil)
+	getResp, err := client.GetIssue(ctx, issueID, []string{"attachments"})
 	if err != nil {
 		t.Fatalf("GetIssue #%d after update: %v", issueID, err)
 	}
 	if getResp.Issue.Subject != updatedSubject {
 		t.Fatalf("subject after update = %q, want %q", getResp.Issue.Subject, updatedSubject)
+	}
+	matchedAttachment := false
+	for _, attachment := range getResp.Issue.Attachments {
+		if attachment.Filename != attachmentInfo.Name() {
+			continue
+		}
+		matchedAttachment = true
+		if attachment.Description != attachmentDescription {
+			t.Fatalf("attachment description = %q, want %q", attachment.Description, attachmentDescription)
+		}
+		break
+	}
+	if !matchedAttachment {
+		t.Fatalf("attachment %q not found in issue attachments", attachmentInfo.Name())
 	}
 	t.Logf("Verified update for issue #%d: %s", getResp.Issue.ID, getResp.Issue.Subject)
 }

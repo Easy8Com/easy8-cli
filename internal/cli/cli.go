@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -238,6 +239,9 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	dueDate := fs.String("due-date", "", "Due date (YYYY-MM-DD)")
 	var doneRatio optionalInt
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
+	attachmentArgs := issueAttachmentArgs{}
+	fs.Var(&issueAttachmentPathValue{args: &attachmentArgs}, "attachment", "Attachment file path (repeatable)")
+	fs.Var(&issueAttachmentDescriptionValue{args: &attachmentArgs}, "attachment-description", "Description for the preceding --attachment")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
@@ -293,6 +297,13 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 			return usageError(fmt.Errorf("--done-ratio must be between 0 and 100"))
 		}
 		input.DoneRatio = intPtr(doneRatio.value)
+	}
+	if len(attachmentArgs.items) > 0 {
+		uploads, err := prepareIssueUploads(context.Background(), client, attachmentArgs.items)
+		if err != nil {
+			return apiError(err)
+		}
+		input.Uploads = uploads
 	}
 
 	resp, err := client.CreateIssue(context.Background(), input)
@@ -542,6 +553,9 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	fs.Var(&assignedToID, "assigned-to-id", "Assigned to user ID")
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
 	notes := fs.String("notes", "", "Notes (journal entry)")
+	attachmentArgs := issueAttachmentArgs{}
+	fs.Var(&issueAttachmentPathValue{args: &attachmentArgs}, "attachment", "Attachment file path (repeatable)")
+	fs.Var(&issueAttachmentDescriptionValue{args: &attachmentArgs}, "attachment-description", "Description for the preceding --attachment")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
 
@@ -584,6 +598,13 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	}
 	if strings.TrimSpace(*notes) != "" {
 		input.Notes = stringPtr(*notes)
+	}
+	if len(attachmentArgs.items) > 0 {
+		uploads, err := prepareIssueUploads(context.Background(), client, attachmentArgs.items)
+		if err != nil {
+			return apiError(err)
+		}
+		input.Uploads = uploads
 	}
 
 	resp, err := client.UpdateIssue(context.Background(), *id, input)
@@ -910,7 +931,10 @@ func printIssueUsage() {
 		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
 		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
 		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2",
+		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment ./spec.pdf --attachment-description \"Specification\"",
 		"  easy8 issue update 123 --status-id 5",
+		"  easy8 issue update 123 --attachment ./error.log",
+		"  easy8 issue update 123 --attachment ./screenshot.png --attachment-description \"Failure screenshot\"",
 		"  easy8 issue update --id 123 --status-id 5",
 	}
 	for _, line := range lines {
@@ -949,11 +973,82 @@ type optionalInt struct {
 	value int
 }
 
+type issueAttachmentInput struct {
+	Path           string
+	Description    string
+	descriptionSet bool
+}
+
+type issueAttachmentArgs struct {
+	items []issueAttachmentInput
+}
+
+type issueAttachmentPathValue struct {
+	args *issueAttachmentArgs
+}
+
+type issueAttachmentDescriptionValue struct {
+	args *issueAttachmentArgs
+}
+
 func (flagValue *optionalInt) String() string {
 	if !flagValue.set {
 		return ""
 	}
 	return fmt.Sprintf("%d", flagValue.value)
+}
+
+func (value *issueAttachmentPathValue) String() string {
+	if value == nil || value.args == nil || len(value.args.items) == 0 {
+		return ""
+	}
+	paths := make([]string, 0, len(value.args.items))
+	for _, item := range value.args.items {
+		paths = append(paths, item.Path)
+	}
+	return strings.Join(paths, ",")
+}
+
+func (value *issueAttachmentPathValue) Set(raw string) error {
+	if value == nil || value.args == nil {
+		return fmt.Errorf("attachment flags are not initialized")
+	}
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return fmt.Errorf("attachment path cannot be empty")
+	}
+	value.args.items = append(value.args.items, issueAttachmentInput{Path: path})
+	return nil
+}
+
+func (value *issueAttachmentDescriptionValue) String() string {
+	if value == nil || value.args == nil || len(value.args.items) == 0 {
+		return ""
+	}
+	descriptions := make([]string, 0, len(value.args.items))
+	for _, item := range value.args.items {
+		if item.Description == "" {
+			continue
+		}
+		descriptions = append(descriptions, item.Description)
+	}
+	return strings.Join(descriptions, ",")
+}
+
+func (value *issueAttachmentDescriptionValue) Set(raw string) error {
+	if value == nil || value.args == nil {
+		return fmt.Errorf("attachment flags are not initialized")
+	}
+	if len(value.args.items) == 0 {
+		return fmt.Errorf("--attachment-description requires a preceding --attachment")
+	}
+	last := &value.args.items[len(value.args.items)-1]
+	if last.descriptionSet {
+		return fmt.Errorf("--attachment-description already set for %s", last.Path)
+	}
+	last.Description = raw
+	last.descriptionSet = true
+	return nil
 }
 
 func (flagValue *optionalInt) Set(value string) error {
@@ -1108,6 +1203,66 @@ func splitComma(input string) []string {
 		result = append(result, trimmed)
 	}
 	return result
+}
+
+func prepareIssueUploads(ctx context.Context, client *api.Client, attachments []issueAttachmentInput) ([]api.IssueUpload, error) {
+	if err := validateIssueAttachments(attachments); err != nil {
+		return nil, err
+	}
+
+	uploads := make([]api.IssueUpload, 0, len(attachments))
+	for _, attachment := range attachments {
+		upload, err := uploadIssueAttachment(ctx, client, attachment)
+		if err != nil {
+			return nil, err
+		}
+		uploads = append(uploads, upload)
+	}
+	return uploads, nil
+}
+
+func validateIssueAttachments(attachments []issueAttachmentInput) error {
+	for _, attachment := range attachments {
+		file, err := os.Open(attachment.Path)
+		if err != nil {
+			return fmt.Errorf("attachment %q: %w", attachment.Path, err)
+		}
+		info, statErr := file.Stat()
+		closeErr := file.Close()
+		if statErr != nil {
+			return fmt.Errorf("attachment %q: %w", attachment.Path, statErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("attachment %q: %w", attachment.Path, closeErr)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("attachment %q: is a directory", attachment.Path)
+		}
+	}
+	return nil
+}
+
+func uploadIssueAttachment(ctx context.Context, client *api.Client, attachment issueAttachmentInput) (api.IssueUpload, error) {
+	file, err := os.Open(attachment.Path)
+	if err != nil {
+		return api.IssueUpload{}, fmt.Errorf("attachment %q: %w", attachment.Path, err)
+	}
+	defer file.Close()
+
+	filename := filepath.Base(attachment.Path)
+	uploadResp, err := client.UploadAttachment(ctx, filename, file)
+	if err != nil {
+		return api.IssueUpload{}, fmt.Errorf("upload attachment %q: %w", attachment.Path, err)
+	}
+
+	upload := api.IssueUpload{
+		Token:    uploadResp.Upload.Token,
+		Filename: filename,
+	}
+	if description := strings.TrimSpace(attachment.Description); description != "" {
+		upload.Description = description
+	}
+	return upload, nil
 }
 
 func stringPtr(value string) *string {

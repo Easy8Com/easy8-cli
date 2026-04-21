@@ -231,16 +231,36 @@ easy8 issue create \
   --assigned-to-id 2 \
   --description "Short summary" \
   --done-ratio 0
+
+easy8 issue create \
+  --subject "Fix onboarding" \
+  --project-id 1 \
+  --tracker-id 1 \
+  --status-id 1 \
+  --priority-id 1 \
+  --author-id 1 \
+  --assigned-to-id 2 \
+  --attachment ./spec.pdf \
+  --attachment-description "Specification" \
+  --attachment ./build.log
 ```
 
 ### Update issue
 
 ```bash
 easy8 issue update 123 --status-id 5 --done-ratio 80
+easy8 issue update 123 --attachment ./error.log
+easy8 issue update 123 --attachment ./screenshot.png --attachment-description "Failure screenshot"
 easy8 issue update --id 123 --status-id 5 --done-ratio 80  # legacy compatible form
 ```
 
 `--done-ratio` must be between 0 and 100.
+
+`--attachment` can be repeated.
+
+`--attachment-description` is optional and applies to the immediately preceding `--attachment`.
+
+`--notes` is optional for `issue update`, including attachment-only updates.
 
 ## Product Backlog Items (PBIs)
 

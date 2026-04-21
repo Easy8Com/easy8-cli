@@ -81,7 +81,11 @@ func outputIssueDetail(issue api.Issue) int {
 		fmt.Fprintf(w, "\nAttachments:\n")
 		for _, att := range issue.Attachments {
 			author := nameOrEmpty(att.Author)
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", att.Filename, formatFilesize(att.Filesize), author, att.CreatedOn)
+			label := att.Filename
+			if att.Description != "" {
+				label = fmt.Sprintf("%s (%s)", att.Filename, truncate(att.Description, 80))
+			}
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", label, formatFilesize(att.Filesize), author, att.CreatedOn)
 		}
 	}
 	if len(issue.Journals) > 0 {

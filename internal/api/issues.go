@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -106,6 +109,50 @@ func (c *Client) GetIssue(ctx context.Context, id int, include []string) (IssueR
 		return IssueResponse{}, err
 	}
 	return resp, nil
+}
+
+func (c *Client) UploadAttachment(ctx context.Context, filename string, body io.Reader) (UploadResponse, error) {
+	if c.APIKey == "" {
+		return UploadResponse{}, fmt.Errorf("missing API key")
+	}
+	if strings.TrimSpace(filename) == "" {
+		return UploadResponse{}, fmt.Errorf("missing attachment filename")
+	}
+
+	query := url.Values{}
+	query.Set("filename", filename)
+	urlValue := c.BaseURL + "/uploads.json?" + query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlValue, body)
+	if err != nil {
+		return UploadResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Redmine-API-Key", c.APIKey)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return UploadResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return UploadResponse{}, err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return UploadResponse{}, APIError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(respBody)), URL: urlValue}
+	}
+
+	var uploadResp UploadResponse
+	if len(respBody) == 0 {
+		return uploadResp, nil
+	}
+	if err := json.Unmarshal(respBody, &uploadResp); err != nil {
+		return UploadResponse{}, err
+	}
+	return uploadResp, nil
 }
 
 func (c *Client) CreateIssue(ctx context.Context, input IssueInput) (IssueResponse, error) {

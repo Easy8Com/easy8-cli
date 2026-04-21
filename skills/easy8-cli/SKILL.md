@@ -89,13 +89,28 @@ easy8 issue show 124 --quiet
 easy8 issue search --q "<user text>" --quiet
 ```
 
+### Issue create (only explicit user request)
+
+```bash
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --quiet
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --attachment-description "Specification" --quiet
+```
+
 ### Issue update (only explicit user request)
 
 ```bash
 easy8 issue update 124 --status-id 5 --quiet
 easy8 issue update 124 --done-ratio 80 --notes "progress update" --quiet
 easy8 issue update 124 --subject "New title" --description "Updated text" --quiet
+easy8 issue update 124 --attachment "./build.log" --quiet
+easy8 issue update 124 --attachment "./screenshot.png" --attachment-description "Failure screenshot" --quiet
 ```
+
+Attachment rules:
+
+- `--notes` is optional, including attachment-only updates.
+- `--attachment` can be repeated.
+- `--attachment-description` is optional and applies to the immediately preceding `--attachment`.
 
 Issue update expects IDs for lookup fields:
 
@@ -152,3 +167,6 @@ After fetching entity, return a short brief:
 - `find pbi onboarding` -> `easy8 pbi list --q "onboarding" --quiet`
 - `set pbi #42 to done` -> `easy8 pbi update 42 --status done --quiet`
 - `change issue #123 done ratio to 80` -> `easy8 issue update 123 --done-ratio 80 --quiet`
+- `attach ./build.log to issue #123` -> `easy8 issue update 123 --attachment "./build.log" --quiet`
+- `attach ./shot.png to issue #123 with description "Failure screenshot"` -> `easy8 issue update 123 --attachment "./shot.png" --attachment-description "Failure screenshot" --quiet`
+- `create issue "Fix login" with attachment ./spec.pdf` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --quiet`

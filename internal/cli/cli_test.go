@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -434,6 +435,109 @@ func TestIssueCreateJSONOutput(t *testing.T) {
 	}
 }
 
+func TestIssueCreateWithMultipleAttachmentsAndOptionalDescriptions(t *testing.T) {
+	firstPath := mustWriteTestFile(t, "spec.pdf", "spec-content")
+	secondPath := mustWriteTestFile(t, "build.log", "build output")
+	expectedUploads := []struct {
+		Filename    string
+		Description string
+		Body        string
+		Token       string
+	}{
+		{Filename: "spec.pdf", Description: "Specification", Body: "spec-content", Token: "token-1"},
+		{Filename: "build.log", Description: "", Body: "build output", Token: "token-2"},
+	}
+
+	uploadCalls := 0
+	createSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/uploads.json":
+			if r.Method != http.MethodPost {
+				t.Fatalf("upload method = %s", r.Method)
+			}
+			if uploadCalls >= len(expectedUploads) {
+				t.Fatalf("unexpected extra upload call")
+			}
+			expected := expectedUploads[uploadCalls]
+			if r.URL.Query().Get("filename") != expected.Filename {
+				t.Fatalf("upload filename = %s", r.URL.Query().Get("filename"))
+			}
+			if r.Header.Get("Content-Type") != "application/octet-stream" {
+				t.Fatalf("upload content-type = %s", r.Header.Get("Content-Type"))
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read upload body: %v", err)
+			}
+			if string(body) != expected.Body {
+				t.Fatalf("upload body = %q", string(body))
+			}
+			uploadCalls++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"upload":{"token":"` + expected.Token + `"}}`))
+		case r.URL.Path == "/issues.json":
+			if r.Method != http.MethodPost {
+				t.Fatalf("create method = %s", r.Method)
+			}
+			createSeen = true
+			var request api.IssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(request.Issue.Uploads) != len(expectedUploads) {
+				t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+			}
+			for i, upload := range request.Issue.Uploads {
+				expected := expectedUploads[i]
+				if upload.Token != expected.Token {
+					t.Fatalf("upload token[%d] = %q", i, upload.Token)
+				}
+				if upload.Filename != expected.Filename {
+					t.Fatalf("upload filename[%d] = %q", i, upload.Filename)
+				}
+				if upload.Description != expected.Description {
+					t.Fatalf("upload description[%d] = %q", i, upload.Description)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"issue":{"id":202,"subject":"New task"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+
+	args := []string{
+		"issue", "create",
+		"--subject", "New task",
+		"--project-id", "1",
+		"--tracker-id", "1",
+		"--status-id", "1",
+		"--priority-id", "1",
+		"--author-id", "1",
+		"--assigned-to-id", "2",
+		"--attachment", firstPath,
+		"--attachment-description", "Specification",
+		"--attachment", secondPath,
+	}
+	stdout, stderr, code := captureRun(t, args)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "New task") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+	if uploadCalls != len(expectedUploads) {
+		t.Fatalf("upload calls = %d", uploadCalls)
+	}
+	if !createSeen {
+		t.Fatal("expected create request")
+	}
+}
+
 func TestIssueUpdateTableOutput(t *testing.T) {
 	server := newTestServer(t)
 	setTestEnv(t, server.URL)
@@ -474,6 +578,189 @@ func TestIssueUpdateWithPositionalID(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Fix onboarding") {
 		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestIssueUpdateWithAttachmentOnlyNoNotes(t *testing.T) {
+	attachmentPath := mustWriteTestFile(t, "error.log", "runtime failure")
+	uploadSeen := false
+	putSeen := false
+	getSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/uploads.json":
+			uploadSeen = true
+			if r.Method != http.MethodPost {
+				t.Fatalf("upload method = %s", r.Method)
+			}
+			if r.URL.Query().Get("filename") != "error.log" {
+				t.Fatalf("upload filename = %s", r.URL.Query().Get("filename"))
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read upload body: %v", err)
+			}
+			if string(body) != "runtime failure" {
+				t.Fatalf("upload body = %q", string(body))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"upload":{"token":"upload-token"}}`))
+		case r.URL.Path == "/issues/101.json" && r.Method == http.MethodPut:
+			putSeen = true
+			var request api.IssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if request.Issue.Notes != nil {
+				t.Fatalf("expected notes to be omitted, got %q", *request.Issue.Notes)
+			}
+			if len(request.Issue.Uploads) != 1 {
+				t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+			}
+			upload := request.Issue.Uploads[0]
+			if upload.Token != "upload-token" {
+				t.Fatalf("upload token = %q", upload.Token)
+			}
+			if upload.Filename != "error.log" {
+				t.Fatalf("upload filename = %q", upload.Filename)
+			}
+			if upload.Description != "" {
+				t.Fatalf("upload description = %q", upload.Description)
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/issues/101.json" && r.Method == http.MethodGet:
+			getSeen = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","status":{"id":1,"name":"New"},"assigned_to":{"id":2,"name":"Alice"},"updated_on":"2024-01-15"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "update", "--id", "101", "--attachment", attachmentPath})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Fix onboarding") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+	if !uploadSeen || !putSeen || !getSeen {
+		t.Fatalf("expected upload=%v put=%v get=%v", uploadSeen, putSeen, getSeen)
+	}
+}
+
+func TestIssueUpdateWithAttachmentDescription(t *testing.T) {
+	attachmentPath := mustWriteTestFile(t, "screenshot.png", "png-binary")
+	putSeen := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/uploads.json":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"upload":{"token":"upload-token"}}`))
+		case r.URL.Path == "/issues/101.json" && r.Method == http.MethodPut:
+			putSeen = true
+			var request api.IssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(request.Issue.Uploads) != 1 {
+				t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+			}
+			if request.Issue.Uploads[0].Description != "Failure screenshot" {
+				t.Fatalf("upload description = %q", request.Issue.Uploads[0].Description)
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/issues/101.json" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","status":{"id":1,"name":"New"},"assigned_to":{"id":2,"name":"Alice"},"updated_on":"2024-01-15"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+
+	_, stderr, code := captureRun(t, []string{"issue", "update", "--id", "101", "--attachment", attachmentPath, "--attachment-description", "Failure screenshot"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !putSeen {
+		t.Fatal("expected update request")
+	}
+}
+
+func TestIssueAttachmentDescriptionWithoutAttachment(t *testing.T) {
+	setTestHome(t)
+
+	args := []string{
+		"issue", "create",
+		"--subject", "New task",
+		"--project-id", "1",
+		"--tracker-id", "1",
+		"--status-id", "1",
+		"--priority-id", "1",
+		"--author-id", "1",
+		"--assigned-to-id", "2",
+		"--attachment-description", "Specification",
+	}
+	_, stderr, code := captureRun(t, args)
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "requires a preceding --attachment") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueAttachmentMissingFile(t *testing.T) {
+	setTestHome(t)
+
+	args := []string{
+		"issue", "create",
+		"--subject", "New task",
+		"--project-id", "1",
+		"--tracker-id", "1",
+		"--status-id", "1",
+		"--priority-id", "1",
+		"--author-id", "1",
+		"--assigned-to-id", "2",
+		"--attachment", filepath.Join(t.TempDir(), "missing.txt"),
+	}
+	_, stderr, code := captureRun(t, args)
+	if code != 1 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "attachment") || !strings.Contains(stderr, "no such file or directory") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueAttachmentDuplicateDescription(t *testing.T) {
+	setTestHome(t)
+
+	args := []string{
+		"issue", "create",
+		"--subject", "New task",
+		"--project-id", "1",
+		"--tracker-id", "1",
+		"--status-id", "1",
+		"--priority-id", "1",
+		"--author-id", "1",
+		"--assigned-to-id", "2",
+		"--attachment", "spec.pdf",
+		"--attachment-description", "First",
+		"--attachment-description", "Second",
+	}
+	_, stderr, code := captureRun(t, args)
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "already set") {
+		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
 
@@ -593,6 +880,9 @@ func TestIssueShowWithJournalsAndAttachments(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "design.pdf") {
 		t.Fatalf("expected attachment filename in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Design doc") {
+		t.Fatalf("expected attachment description in stdout: %s", stdout)
 	}
 	if !strings.Contains(stdout, "200.0 KB") {
 		t.Fatalf("expected attachment filesize in stdout: %s", stdout)
@@ -857,6 +1147,15 @@ func TestPBIUpdatePositionalAndFlagIDConflict(t *testing.T) {
 	if !strings.Contains(stderr, "positional id 1 does not match --id 2") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
+}
+
+func mustWriteTestFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	return path
 }
 
 func setTestHome(t *testing.T) {
