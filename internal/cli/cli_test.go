@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.0") {
+	if !strings.Contains(stdout, "0.1.1") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }

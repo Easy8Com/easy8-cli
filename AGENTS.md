@@ -102,8 +102,8 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Version
-- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.0" -o easy8 ./cmd/easy8`
-- Defaults to `0.1.0` when not set.
+- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.1" -o easy8 ./cmd/easy8`
+- Defaults to `0.1.1` when not set.
 
 ## Extension guidance
 - Keep API client in a small internal package (e.g., `internal/api`).

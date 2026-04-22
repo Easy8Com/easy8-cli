@@ -65,7 +65,7 @@ go build -o easy8 ./cmd/easy8
 **Build with version stamp:**
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.0" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.1" -o easy8 ./cmd/easy8
 ```
 
 </details>

@@ -18,7 +18,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.0"
+var Version = "0.1.1"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
