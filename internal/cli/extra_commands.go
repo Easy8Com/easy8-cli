@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"easy8-cli/internal/config"
@@ -23,6 +24,24 @@ type flagInfo struct {
 	Description string `json:"description"`
 }
 
+type skillInfo struct {
+	Name string `json:"name"`
+}
+
+type skillSyncItem struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Action string `json:"action"`
+}
+
+type skillSyncResult struct {
+	Target string          `json:"target"`
+	Scope  string          `json:"scope"`
+	Root   string          `json:"root"`
+	DryRun bool            `json:"dry_run"`
+	Skills []skillSyncItem `json:"skills"`
+}
+
 func runSkill(args []string, cfg config.Config) int {
 	if len(args) == 0 {
 		_, _ = os.Stdout.Write(skills.Content)
@@ -35,6 +54,10 @@ func runSkill(args []string, cfg config.Config) int {
 	switch args[0] {
 	case "install":
 		return runSkillInstall(args[1:])
+	case "list":
+		return runSkillList(args[1:])
+	case "sync":
+		return runSkillSync(args[1:])
 	case "help", "-h", "--help":
 		printSkillUsage()
 		return 0
@@ -99,12 +122,145 @@ func runSkillInstall(args []string) int {
 	return 0
 }
 
+func runSkillList(args []string) int {
+	fs := flag.NewFlagSet("skill list", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	jsonOut := fs.Bool("json", false, "JSON envelope output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON data output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
+	}
+
+	list := make([]skillInfo, 0, len(skills.Names))
+	for _, name := range skills.Names {
+		list = append(list, skillInfo{Name: name})
+	}
+
+	if *quietOut {
+		return outputJSON(list)
+	}
+	if *jsonOut {
+		return outputJSONEnvelope(list, fmt.Sprintf("%d bundled skills", len(list)), nil, nil)
+	}
+
+	for _, item := range list {
+		fmt.Fprintln(os.Stdout, item.Name)
+	}
+	return 0
+}
+
+func runSkillSync(args []string) int {
+	fs := flag.NewFlagSet("skill sync", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	target := fs.String("target", "opencode", "Install target: opencode, claude, codex")
+	pathFlag := fs.String("path", "", "Custom output directory")
+	global := fs.Bool("global", false, "Install into global agent directory")
+	local := fs.Bool("local", false, "Install into local project directory")
+	dryRun := fs.Bool("dry-run", false, "Show planned writes without changing files")
+	jsonOut := fs.Bool("json", false, "JSON envelope output")
+	quietOut := fs.Bool("quiet", false, "Raw JSON data output")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := validateMachineFlags(*jsonOut, *quietOut); err != nil {
+		return usageError(err)
+	}
+	if *global && *local {
+		return usageError(fmt.Errorf("--global and --local cannot be used together"))
+	}
+
+	targetName := strings.ToLower(strings.TrimSpace(*target))
+	root, scope, err := resolveSkillRoot(targetName, strings.TrimSpace(*pathFlag), *global, *local)
+	if err != nil {
+		return usageError(err)
+	}
+
+	items := make([]skillSyncItem, 0, len(skills.Names))
+	for _, name := range skills.Names {
+		content, err := skills.Read(name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+
+		destination := filepath.Join(root, name, "SKILL.md")
+		action := "written"
+		if *dryRun {
+			action = "would-write"
+		} else {
+			if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				return 1
+			}
+			if err := os.WriteFile(destination, content, 0o644); err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				return 1
+			}
+		}
+
+		items = append(items, skillSyncItem{Name: name, Path: destination, Action: action})
+	}
+
+	result := skillSyncResult{
+		Target: targetName,
+		Scope:  scope,
+		Root:   root,
+		DryRun: *dryRun,
+		Skills: items,
+	}
+	if *quietOut {
+		return outputJSON(result)
+	}
+	if *jsonOut {
+		summary := fmt.Sprintf("%d skills synced", len(items))
+		if *dryRun {
+			summary = fmt.Sprintf("%d skills would be synced", len(items))
+		}
+		return outputJSONEnvelope(result, summary, nil, nil)
+	}
+
+	if *dryRun {
+		fmt.Fprintf(os.Stdout, "Would sync %d skills to %s\n", len(items), root)
+	} else {
+		fmt.Fprintf(os.Stdout, "Synced %d skills to %s\n", len(items), root)
+	}
+	for _, item := range items {
+		fmt.Fprintf(os.Stdout, "  %s\t%s\n", item.Name, item.Path)
+	}
+	return 0
+}
+
 func resolveSkillPath(target, customPath string, global, local bool) (string, string, error) {
+	return resolveSkillFilePath(target, customPath, global, local, skills.PrimaryName)
+}
+
+func resolveSkillFilePath(target, customPath string, global, local bool, skillName string) (string, string, error) {
 	if customPath != "" {
 		if strings.HasSuffix(strings.ToLower(customPath), ".md") {
 			return customPath, "custom", nil
 		}
-		return filepath.Join(customPath, "easy8-cli", "SKILL.md"), "custom", nil
+		return filepath.Join(customPath, skillName, "SKILL.md"), "custom", nil
+	}
+	root, scope, err := resolveSkillRoot(target, customPath, global, local)
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Join(root, skillName, "SKILL.md"), scope, nil
+}
+
+func resolveSkillRoot(target, customPath string, global, local bool) (string, string, error) {
+	if customPath != "" {
+		if strings.HasSuffix(strings.ToLower(customPath), ".md") {
+			return "", "", fmt.Errorf("--path must be a directory for skill sync")
+		}
+		return customPath, "custom", nil
 	}
 
 	scope := "global"
@@ -116,17 +272,22 @@ func resolveSkillPath(target, customPath string, global, local bool) (string, st
 	}
 
 	if scope == "global" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", "", err
-		}
 		switch target {
 		case "opencode":
-			return filepath.Join(home, ".config", "opencode", "skill", "easy8-cli", "SKILL.md"), scope, nil
+			root, err := defaultOpenCodeSkillsRoot()
+			return root, scope, err
 		case "claude":
-			return filepath.Join(home, ".claude", "skills", "easy8-cli", "SKILL.md"), scope, nil
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", "", err
+			}
+			return filepath.Join(home, ".claude", "skills"), scope, nil
 		case "codex":
-			return filepath.Join(home, ".codex", "skills", "easy8-cli", "SKILL.md"), scope, nil
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", "", err
+			}
+			return filepath.Join(home, ".codex", "skills"), scope, nil
 		default:
 			return "", "", fmt.Errorf("unsupported --target: %s", target)
 		}
@@ -138,14 +299,30 @@ func resolveSkillPath(target, customPath string, global, local bool) (string, st
 	}
 	switch target {
 	case "opencode":
-		return filepath.Join(wd, ".opencode", "skills", "easy8-cli", "SKILL.md"), scope, nil
+		return filepath.Join(wd, ".opencode", "skills"), scope, nil
 	case "claude":
-		return filepath.Join(wd, ".claude", "skills", "easy8-cli", "SKILL.md"), scope, nil
+		return filepath.Join(wd, ".claude", "skills"), scope, nil
 	case "codex":
-		return filepath.Join(wd, ".codex", "skills", "easy8-cli", "SKILL.md"), scope, nil
+		return filepath.Join(wd, ".codex", "skills"), scope, nil
 	default:
 		return "", "", fmt.Errorf("unsupported --target: %s", target)
 	}
+}
+
+func defaultOpenCodeSkillsRoot() (string, error) {
+	if runtime.GOOS == "windows" {
+		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
+			return filepath.Join(appData, "opencode", "skills"), nil
+		}
+	}
+	if xdgConfig := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfig != "" {
+		return filepath.Join(xdgConfig, "opencode", "skills"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "opencode", "skills"), nil
 }
 
 func printSkillUsage() {
@@ -155,10 +332,16 @@ func printSkillUsage() {
 		"Usage:",
 		"  easy8 skill",
 		"  easy8 skill install [flags]",
+		"  easy8 skill list [flags]",
+		"  easy8 skill sync [flags]",
 		"",
 		"Examples:",
 		"  easy8 skill",
 		"  easy8 skill install --target opencode",
+		"  easy8 skill list",
+		"  easy8 skill sync --target opencode",
+		"  easy8 skill sync --target opencode --local",
+		"  easy8 skill sync --target opencode --dry-run",
 		"  easy8 skill install --target claude",
 		"  easy8 skill install --target codex --local",
 		"  easy8 skill install --path ./custom/skills",
@@ -237,7 +420,11 @@ func buildCommandCatalog() []commandInfo {
 		{
 			Name:        "easy8 skill",
 			Description: "Print/install skill file",
-			Subcommands: []commandInfo{{Name: "easy8 skill install", Description: "Install skill for coding agents"}},
+			Subcommands: []commandInfo{
+				{Name: "easy8 skill install", Description: "Install primary skill for coding agents"},
+				{Name: "easy8 skill list", Description: "List bundled skills"},
+				{Name: "easy8 skill sync", Description: "Sync bundled skills for coding agents"},
+			},
 		},
 		{
 			Name:        "easy8 commands",

@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.1") {
+	if !strings.Contains(stdout, "0.1.2") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -98,6 +98,93 @@ func TestSkillInstallLocalOpenCode(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "name: easy8-cli") {
 		t.Fatalf("unexpected skill content")
+	}
+}
+
+func TestSkillListQuiet(t *testing.T) {
+	setTestHome(t)
+
+	stdout, stderr, code := captureRun(t, []string{"skill", "list", "--quiet"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+
+	var list []skillInfo
+	if err := json.Unmarshal([]byte(stdout), &list); err != nil {
+		t.Fatalf("json error: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("expected 3 bundled skills, got %+v", list)
+	}
+	if list[0].Name != "easy8-cli" || list[1].Name != "easy-query" || list[2].Name != "git-flow" {
+		t.Fatalf("unexpected skill list: %+v", list)
+	}
+}
+
+func TestSkillSyncGlobalOpenCode(t *testing.T) {
+	setTestHome(t)
+	configRoot := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configRoot)
+
+	stdout, stderr, code := captureRun(t, []string{"skill", "sync", "--target", "opencode"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Synced 3 skills") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	for _, name := range []string{"easy8-cli", "easy-query", "git-flow"} {
+		path := filepath.Join(configRoot, "opencode", "skills", name, "SKILL.md")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read synced skill %s: %v", name, err)
+		}
+		if !strings.Contains(string(data), "name: "+name) {
+			t.Fatalf("unexpected content for %s", name)
+		}
+	}
+}
+
+func TestSkillSyncLocalOpenCode(t *testing.T) {
+	setTestHome(t)
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	stdout, stderr, code := captureRun(t, []string{"skill", "sync", "--target", "opencode", "--local"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Synced 3 skills") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	path := filepath.Join(project, ".opencode", "skills", "easy-query", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read synced skill: %v", err)
+	}
+	if !strings.Contains(string(data), "name: easy-query") {
+		t.Fatalf("unexpected skill content")
+	}
+}
+
+func TestSkillSyncDryRunDoesNotWrite(t *testing.T) {
+	setTestHome(t)
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	stdout, stderr, code := captureRun(t, []string{"skill", "sync", "--target", "opencode", "--local", "--dry-run"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Would sync 3 skills") {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+
+	path := filepath.Join(project, ".opencode", "skills", "easy8-cli", "SKILL.md")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected dry-run not to write %s, err=%v", path, err)
 	}
 }
 

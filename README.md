@@ -65,7 +65,7 @@ go build -o easy8 ./cmd/easy8
 **Build with version stamp:**
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.1" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.2" -o easy8 ./cmd/easy8
 ```
 
 </details>
@@ -139,15 +139,36 @@ Invalid integer values produce a warning on stderr.
 
 ### Agent skill (source of truth)
 
-This repository contains the canonical skill file for agent-driven task/PBI fetches:
+This repository contains bundled skills for agent-driven Easy8 workflows:
 
 ```text
 skills/easy8-cli/SKILL.md
+skills/easy-query/SKILL.md
+skills/git-flow/SKILL.md
 ```
 
-The skill is agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.
+The skills are agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.
 
-Install from CLI:
+Sync all bundled skills into your global OpenCode skill directory:
+
+```bash
+easy8 skill sync --target opencode
+```
+
+Sync into the current repository instead:
+
+```bash
+easy8 skill sync --target opencode --local
+```
+
+Preview or list bundled skills:
+
+```bash
+easy8 skill sync --target opencode --dry-run
+easy8 skill list
+```
+
+Install only the primary `easy8-cli` skill:
 
 ```bash
 easy8 skill install --target opencode
@@ -155,7 +176,7 @@ easy8 skill install --target claude
 easy8 skill install --target codex --local
 ```
 
-Print embedded skill content:
+Print embedded primary skill content:
 
 ```bash
 easy8 skill
