@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.5") {
+	if !strings.Contains(stdout, "0.1.6") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -341,6 +341,92 @@ func TestSetupNonInteractiveLocal(t *testing.T) {
 	}
 }
 
+func TestSetupNonInteractiveDefaultsAutoupdateTrue(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "")
+
+	_, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--global", "--base-url", "https://example.com", "--api-key", "abc"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+
+	path := filepath.Join(home, ".config", "easy8", "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var saved config.Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !saved.AutoUpdate {
+		t.Fatalf("autoupdate = false")
+	}
+}
+
+func TestSetupInteractivePromptsAutoupdateDefaultYes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "")
+
+	input := "\nhttps://example.com\nabc\n\n"
+	stdout, stderr, code := captureRunWithInput(t, []string{"setup"}, input)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "Enable automatic daily updates? [Y/n]") {
+		t.Fatalf("expected autoupdate prompt, stdout=%s", stdout)
+	}
+
+	path := filepath.Join(home, ".config", "easy8", "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var saved config.Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !saved.AutoUpdate {
+		t.Fatalf("autoupdate = false")
+	}
+}
+
+func TestSetupInteractiveAutoupdateNo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "")
+
+	project := t.TempDir()
+	setWorkingDir(t, project)
+
+	input := "https://example.com\nabc\nno\n"
+	stdout, stderr, code := captureRunWithInput(t, []string{"setup", "--local"}, input)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+
+	path := filepath.Join(project, ".easy8.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var saved config.Config
+	if err := yaml.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if saved.AutoUpdate {
+		t.Fatalf("autoupdate = true")
+	}
+}
+
 func TestSetupNonInteractiveValidation(t *testing.T) {
 	setTestHome(t)
 
@@ -394,6 +480,42 @@ func TestPromptScopeRejectsInvalid(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	if !strings.Contains(err.Error(), "invalid scope") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPromptBoolDefaultsToYes(t *testing.T) {
+	output := &bytes.Buffer{}
+	value, err := promptBool(strings.NewReader("\n"), output, "Enable automatic daily updates", true)
+	if err != nil {
+		t.Fatalf("promptBool error: %v", err)
+	}
+	if !value {
+		t.Fatalf("value = false")
+	}
+	if !strings.Contains(output.String(), "[Y/n]") {
+		t.Fatalf("unexpected prompt: %s", output.String())
+	}
+}
+
+func TestPromptBoolAcceptsNo(t *testing.T) {
+	output := &bytes.Buffer{}
+	value, err := promptBool(strings.NewReader("no\n"), output, "Enable automatic daily updates", true)
+	if err != nil {
+		t.Fatalf("promptBool error: %v", err)
+	}
+	if value {
+		t.Fatalf("value = true")
+	}
+}
+
+func TestPromptBoolRejectsInvalid(t *testing.T) {
+	output := &bytes.Buffer{}
+	_, err := promptBool(strings.NewReader("maybe\n"), output, "Enable automatic daily updates", true)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid value") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1279,12 +1401,31 @@ func setTestEnv(t *testing.T, baseURL string) {
 }
 
 func captureRun(t *testing.T, args []string) (string, string, int) {
+	return captureRunWithInput(t, args, "")
+}
+
+func captureRunWithInput(t *testing.T, args []string, input string) (string, string, int) {
 	t.Helper()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
+	oldStdin := os.Stdin
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr
+	if input != "" {
+		inputFile, err := os.CreateTemp(t.TempDir(), "stdin-*")
+		if err != nil {
+			t.Fatalf("create stdin: %v", err)
+		}
+		if _, err := inputFile.WriteString(input); err != nil {
+			t.Fatalf("write stdin: %v", err)
+		}
+		if _, err := inputFile.Seek(0, 0); err != nil {
+			t.Fatalf("seek stdin: %v", err)
+		}
+		defer inputFile.Close()
+		os.Stdin = inputFile
+	}
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
@@ -1301,6 +1442,7 @@ func captureRun(t *testing.T, args []string) (string, string, int) {
 
 	_ = stdoutWriter.Close()
 	_ = stderrWriter.Close()
+	os.Stdin = oldStdin
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 

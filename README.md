@@ -65,7 +65,7 @@ go build -o easy8 ./cmd/easy8
 **Build with version stamp:**
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.5" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.6" -o easy8 ./cmd/easy8
 ```
 
 </details>
@@ -89,6 +89,8 @@ Recommended (writes YAML config file):
 ```bash
 easy8 setup
 ```
+
+The interactive setup wizard asks whether to enable automatic daily updates and defaults to yes.
 
 Non-interactive examples:
 
@@ -137,7 +139,8 @@ easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api
 
 Invalid integer and boolean values produce a warning on stderr.
 
-Automatic daily updates can be enabled with `easy8 setup --autoupdate` or `EASY8_AUTOUPDATE=true`.
+Automatic daily updates can be enabled with the setup wizard, `easy8 setup --autoupdate`, or `EASY8_AUTOUPDATE=true`.
+Use `easy8 setup --autoupdate=false` to disable it explicitly in non-interactive environments such as Docker images.
 When enabled, easy8 silently checks GitHub Releases at most once every 24 hours on normal command startup, verifies `checksums.txt`, and updates the current executable if a newer release exists.
 The daily check state is stored in `~/.config/easy8/update-state.yaml`.
 Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.

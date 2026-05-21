@@ -74,7 +74,9 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
     `EASY8_DEFAULT_STATUS_ID`, `EASY8_DEFAULT_PRIORITY_ID`,
     `EASY8_DEFAULT_AUTHOR_ID`, `EASY8_DEFAULT_ASSIGNED_TO_ID`
 - Invalid integer/boolean env vars produce a warning on stderr (not silently ignored).
+- Interactive `easy8 setup` asks whether to enable autoupdate and defaults to yes.
 - `easy8 setup --autoupdate` enables a silent GitHub Releases self-update check at most once every 24 hours.
+- `easy8 setup --autoupdate=false` disables it explicitly for non-interactive environments.
 - Autoupdate state is stored in `~/.config/easy8/update-state.yaml`.
 - Autoupdate is skipped for `version`, `help`, `commands`, `update`, and `setup`.
 - Optional config files:
@@ -107,8 +109,8 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Version
-- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.5" -o easy8 ./cmd/easy8`
-- Defaults to `0.1.5` when not set.
+- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.6" -o easy8 ./cmd/easy8`
+- Defaults to `0.1.6` when not set.
 
 ## Extension guidance
 - Keep API client in a small internal package (e.g., `internal/api`).

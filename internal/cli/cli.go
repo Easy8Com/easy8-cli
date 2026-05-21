@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -18,7 +17,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.5"
+var Version = "0.1.6"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
@@ -177,6 +176,15 @@ func runSetup(args []string, cfg config.Config) int {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			return 1
 		}
+		if !autoUpdate.set {
+			autoUpdateValue, err := promptBool(os.Stdin, os.Stdout, "Enable automatic daily updates", true)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				return 1
+			}
+			autoUpdate.value = autoUpdateValue
+			autoUpdate.set = true
+		}
 	}
 
 	if strings.TrimSpace(baseURLValue) == "" {
@@ -208,7 +216,7 @@ func runSetup(args []string, cfg config.Config) int {
 	if assignedToID.set {
 		defaults.AssignedToID = assignedToID.value
 	}
-	autoUpdateValue := cfg.AutoUpdate
+	autoUpdateValue := true
 	if autoUpdate.set {
 		autoUpdateValue = autoUpdate.value
 	}
@@ -1113,7 +1121,6 @@ func parseInt(value string) (int, error) {
 }
 
 func promptString(input io.Reader, output io.Writer, label, defaultValue string) (string, error) {
-	reader := bufio.NewReader(input)
 	prompt := label
 	if strings.TrimSpace(defaultValue) != "" {
 		prompt = fmt.Sprintf("%s [%s]", label, strings.TrimSpace(defaultValue))
@@ -1121,8 +1128,8 @@ func promptString(input io.Reader, output io.Writer, label, defaultValue string)
 	if _, err := fmt.Fprintf(output, "%s: ", prompt); err != nil {
 		return "", err
 	}
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	line, err := readPromptLine(input)
+	if err != nil {
 		return "", err
 	}
 	value := strings.TrimSpace(line)
@@ -1136,12 +1143,11 @@ func promptString(input io.Reader, output io.Writer, label, defaultValue string)
 }
 
 func promptScope(input io.Reader, output io.Writer) (string, error) {
-	reader := bufio.NewReader(input)
 	if _, err := fmt.Fprint(output, "Where to save config? [global/local] (default: global): "); err != nil {
 		return "", err
 	}
-	line, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	line, err := readPromptLine(input)
+	if err != nil {
 		return "", err
 	}
 	value := strings.ToLower(strings.TrimSpace(line))
@@ -1155,6 +1161,54 @@ func promptScope(input io.Reader, output io.Writer) (string, error) {
 		return "local", nil
 	default:
 		return "", fmt.Errorf("invalid scope: %s (use global or local)", value)
+	}
+}
+
+func promptBool(input io.Reader, output io.Writer, label string, defaultValue bool) (bool, error) {
+	defaultLabel := "y/N"
+	if defaultValue {
+		defaultLabel = "Y/n"
+	}
+	if _, err := fmt.Fprintf(output, "%s? [%s]: ", label, defaultLabel); err != nil {
+		return false, err
+	}
+	line, err := readPromptLine(input)
+	if err != nil {
+		return false, err
+	}
+	value := strings.ToLower(strings.TrimSpace(line))
+	if value == "" {
+		return defaultValue, nil
+	}
+	switch value {
+	case "y", "yes", "true", "1", "on":
+		return true, nil
+	case "n", "no", "false", "0", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid value for %s: %s (use yes or no)", strings.ToLower(label), value)
+	}
+}
+
+func readPromptLine(input io.Reader) (string, error) {
+	var builder strings.Builder
+	buf := make([]byte, 1)
+	for {
+		n, err := input.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return builder.String(), nil
+			}
+			if buf[0] != '\r' {
+				builder.WriteByte(buf[0])
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return builder.String(), nil
+			}
+			return "", err
+		}
 	}
 }
 

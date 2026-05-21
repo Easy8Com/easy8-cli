@@ -57,6 +57,8 @@ To enable silent daily self-update checks for normal commands:
 easy8 setup --autoupdate
 ```
 
+Interactive `easy8 setup` asks about autoupdate and defaults to yes. Use `easy8 setup --autoupdate=false` when automatic updates must be disabled, for example in Docker images.
+
 Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.
 
 ## Authentication / Config Prerequisites
@@ -156,9 +158,10 @@ easy8 pbi update 42 --name "New name" --estimate 5 --description "Details" --qui
 ```bash
 easy8 update --quiet
 easy8 setup --autoupdate
+easy8 setup --autoupdate=false
 ```
 
-Use `easy8 update --quiet` only when the user asks to update the easy8 CLI immediately. Use `easy8 setup --autoupdate` only when the user asks to enable automatic daily CLI updates.
+Use `easy8 update --quiet` only when the user asks to update the easy8 CLI immediately. Use `easy8 setup --autoupdate` only when the user asks to enable automatic daily CLI updates. Use `easy8 setup --autoupdate=false` when the user asks to disable automatic CLI updates.
 
 ## Output Format
 
