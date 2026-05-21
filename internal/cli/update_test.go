@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUpdateCommandAlreadyCurrent(t *testing.T) {
@@ -164,6 +166,68 @@ func TestUpdateCommandInCatalog(t *testing.T) {
 	t.Fatalf("expected easy8 update in catalog: %+v", catalog)
 }
 
+func TestStartupAutoUpdateRunsOncePerDayAndStaysSilent(t *testing.T) {
+	setTestHome(t)
+	resetUpdateTestDeps(t)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "true")
+
+	statePath := filepath.Join(t.TempDir(), "update-state.yaml")
+	autoUpdateStateFilePath = func() (string, error) { return statePath, nil }
+	autoUpdateNow = func() time.Time { return time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC) }
+	runs := 0
+	autoUpdateRunner = func(ctx context.Context) (updateResult, error) {
+		runs++
+		return updateResult{}, fmt.Errorf("network unavailable")
+	}
+
+	stdout, stderr, code := captureRun(t, []string{"auth", "status", "--quiet"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("expected silent autoupdate, got stderr=%s", stderr)
+	}
+	if !strings.Contains(stdout, `"authenticated": false`) {
+		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+	if runs != 1 {
+		t.Fatalf("runs = %d", runs)
+	}
+
+	_, stderr, code = captureRun(t, []string{"auth", "status", "--quiet"})
+	if code != 0 {
+		t.Fatalf("second code = %d stderr=%s", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("expected silent second run, got stderr=%s", stderr)
+	}
+	if runs != 1 {
+		t.Fatalf("expected no second autoupdate run, got %d", runs)
+	}
+}
+
+func TestStartupAutoUpdateCommandFilter(t *testing.T) {
+	tests := map[string]bool{
+		"issue":    true,
+		"pbi":      true,
+		"auth":     true,
+		"skill":    true,
+		"setup":    false,
+		"update":   false,
+		"commands": false,
+		"version":  false,
+		"help":     false,
+		"--help":   false,
+	}
+	for command, want := range tests {
+		if got := shouldRunStartupAutoUpdate(command); got != want {
+			t.Fatalf("shouldRunStartupAutoUpdate(%q) = %t, want %t", command, got, want)
+		}
+	}
+}
+
 func resetUpdateTestDeps(t *testing.T) {
 	t.Helper()
 	oldVersion := Version
@@ -171,12 +235,18 @@ func resetUpdateTestDeps(t *testing.T) {
 	oldExecutable := updateExecutable
 	oldGOOS := updateRuntimeGOOS
 	oldGOARCH := updateRuntimeGOARCH
+	oldAutoUpdateRunner := autoUpdateRunner
+	oldAutoUpdateNow := autoUpdateNow
+	oldAutoUpdateStateFilePath := autoUpdateStateFilePath
 	t.Cleanup(func() {
 		Version = oldVersion
 		updateReleaseURL = oldReleaseURL
 		updateExecutable = oldExecutable
 		updateRuntimeGOOS = oldGOOS
 		updateRuntimeGOARCH = oldGOARCH
+		autoUpdateRunner = oldAutoUpdateRunner
+		autoUpdateNow = oldAutoUpdateNow
+		autoUpdateStateFilePath = oldAutoUpdateStateFilePath
 	})
 }
 

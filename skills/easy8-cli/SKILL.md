@@ -51,6 +51,14 @@ To update an existing installation from GitHub Releases:
 easy8 update
 ```
 
+To enable silent daily self-update checks for normal commands:
+
+```bash
+easy8 setup --autoupdate
+```
+
+Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.
+
 ## Authentication / Config Prerequisites
 
 Required config or env:
@@ -147,9 +155,10 @@ easy8 pbi update 42 --name "New name" --estimate 5 --description "Details" --qui
 
 ```bash
 easy8 update --quiet
+easy8 setup --autoupdate
 ```
 
-Use this only when the user asks to update the easy8 CLI itself.
+Use `easy8 update --quiet` only when the user asks to update the easy8 CLI immediately. Use `easy8 setup --autoupdate` only when the user asks to enable automatic daily CLI updates.
 
 ## Output Format
 

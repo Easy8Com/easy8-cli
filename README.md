@@ -65,7 +65,7 @@ go build -o easy8 ./cmd/easy8
 **Build with version stamp:**
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.4" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.5" -o easy8 ./cmd/easy8
 ```
 
 </details>
@@ -95,6 +95,7 @@ Non-interactive examples:
 ```bash
 easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>"
 easy8 setup --non-interactive --local --base-url "https://demo.easy8.com" --api-key "<your-key>"
+easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>" --autoupdate
 ```
 
 Config files:
@@ -114,6 +115,7 @@ Environment variables:
 ```bash
 export EASY8_BASE_URL="https://demo.easy8.com"
 export EASY8_API_KEY="<your-key>"
+export EASY8_AUTOUPDATE=true
 ```
 
 Optional default IDs (avoid repeating on every create):
@@ -133,7 +135,12 @@ You can also save these defaults through setup flags:
 easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 1
 ```
 
-Invalid integer values produce a warning on stderr.
+Invalid integer and boolean values produce a warning on stderr.
+
+Automatic daily updates can be enabled with `easy8 setup --autoupdate` or `EASY8_AUTOUPDATE=true`.
+When enabled, easy8 silently checks GitHub Releases at most once every 24 hours on normal command startup, verifies `checksums.txt`, and updates the current executable if a newer release exists.
+The daily check state is stored in `~/.config/easy8/update-state.yaml`.
+Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.
 
 ## Usage
 
@@ -330,6 +337,12 @@ easy8 update --quiet
 ```
 
 `easy8 update` downloads the latest matching binary from GitHub Releases, verifies `checksums.txt`, and replaces the current executable path.
+
+To enable a silent daily update check for normal commands:
+
+```bash
+easy8 setup --autoupdate
+```
 
 ### Auth helpers
 

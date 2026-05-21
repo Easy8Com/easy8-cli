@@ -13,19 +13,26 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	githubLatestReleaseURL = "https://api.github.com/repos/Easy8Com/easy8-cli/releases/latest"
 	maxUpdateDownloadSize  = 200 << 20
+	autoUpdateInterval     = 24 * time.Hour
+	autoUpdateTimeout      = 10 * time.Second
 )
 
 var (
-	updateReleaseURL    = githubLatestReleaseURL
-	updateHTTPClient    = &http.Client{Timeout: 60 * time.Second}
-	updateExecutable    = os.Executable
-	updateRuntimeGOOS   = func() string { return runtime.GOOS }
-	updateRuntimeGOARCH = func() string { return runtime.GOARCH }
+	updateReleaseURL        = githubLatestReleaseURL
+	updateHTTPClient        = &http.Client{Timeout: 60 * time.Second}
+	updateExecutable        = os.Executable
+	updateRuntimeGOOS       = func() string { return runtime.GOOS }
+	updateRuntimeGOARCH     = func() string { return runtime.GOARCH }
+	autoUpdateRunner        = updateFromGitHub
+	autoUpdateNow           = time.Now
+	autoUpdateStateFilePath = defaultAutoUpdateStateFilePath
 )
 
 type updateResult struct {
@@ -44,6 +51,10 @@ type githubRelease struct {
 type githubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+type autoUpdateState struct {
+	LastCheck string `yaml:"last_check"`
 }
 
 func runUpdate(args []string) int {
@@ -146,6 +157,78 @@ func updateFromGitHub(ctx context.Context) (updateResult, error) {
 	result.Updated = true
 	result.Path = executablePath
 	return result, nil
+}
+
+func shouldRunStartupAutoUpdate(command string) bool {
+	switch command {
+	case "issue", "pbi", "auth", "skill":
+		return true
+	default:
+		return false
+	}
+}
+
+func maybeRunAutoUpdate(enabled bool) {
+	if !enabled {
+		return
+	}
+	now := autoUpdateNow()
+	due, err := isAutoUpdateDue(now)
+	if err != nil || !due {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), autoUpdateTimeout)
+	defer cancel()
+	_, _ = autoUpdateRunner(ctx)
+	_ = writeAutoUpdateState(now)
+}
+
+func isAutoUpdateDue(now time.Time) (bool, error) {
+	path, err := autoUpdateStateFilePath()
+	if err != nil {
+		return false, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	var state autoUpdateState
+	if err := yaml.Unmarshal(data, &state); err != nil {
+		return true, nil
+	}
+	lastCheck, err := time.Parse(time.RFC3339, strings.TrimSpace(state.LastCheck))
+	if err != nil {
+		return true, nil
+	}
+	return !now.Before(lastCheck.Add(autoUpdateInterval)), nil
+}
+
+func writeAutoUpdateState(now time.Time) error {
+	path, err := autoUpdateStateFilePath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(autoUpdateState{LastCheck: now.UTC().Format(time.RFC3339)})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
+func defaultAutoUpdateStateFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "easy8", "update-state.yaml"), nil
 }
 
 func fetchLatestRelease(ctx context.Context) (githubRelease, error) {

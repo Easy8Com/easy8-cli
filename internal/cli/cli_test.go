@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.4") {
+	if !strings.Contains(stdout, "0.1.5") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -272,7 +272,7 @@ func TestSetupNonInteractiveGlobal(t *testing.T) {
 	t.Setenv("EASY8_BASE_URL", "")
 	t.Setenv("EASY8_API_KEY", "")
 
-	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--global", "--base-url", "https://example.com", "--api-key", "abc", "--project-id", "10"})
+	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--global", "--base-url", "https://example.com", "--api-key", "abc", "--project-id", "10", "--autoupdate"})
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
@@ -298,6 +298,9 @@ func TestSetupNonInteractiveGlobal(t *testing.T) {
 	if saved.Defaults.ProjectID != 10 {
 		t.Fatalf("project_id = %d", saved.Defaults.ProjectID)
 	}
+	if !saved.AutoUpdate {
+		t.Fatalf("autoupdate = false")
+	}
 }
 
 func TestSetupNonInteractiveLocal(t *testing.T) {
@@ -305,11 +308,12 @@ func TestSetupNonInteractiveLocal(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("EASY8_BASE_URL", "")
 	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "true")
 
 	project := t.TempDir()
 	setWorkingDir(t, project)
 
-	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--local", "--base-url", "https://local.example.com", "--api-key", "local-key"})
+	stdout, stderr, code := captureRun(t, []string{"setup", "--non-interactive", "--local", "--base-url", "https://local.example.com", "--api-key", "local-key", "--autoupdate=false"})
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
@@ -331,6 +335,9 @@ func TestSetupNonInteractiveLocal(t *testing.T) {
 	}
 	if saved.APIKey != "local-key" {
 		t.Fatalf("api_key = %q", saved.APIKey)
+	}
+	if saved.AutoUpdate {
+		t.Fatalf("autoupdate = true")
 	}
 }
 

@@ -40,6 +40,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("EASY8_DEFAULT_PRIORITY_ID", "13")
 	t.Setenv("EASY8_DEFAULT_AUTHOR_ID", "14")
 	t.Setenv("EASY8_DEFAULT_ASSIGNED_TO_ID", "15")
+	t.Setenv("EASY8_AUTOUPDATE", "true")
 
 	project := t.TempDir()
 	setWorkingDir(t, project)
@@ -72,6 +73,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.Defaults.AssignedToID != 15 {
 		t.Fatalf("AssignedToID = %d", cfg.Defaults.AssignedToID)
 	}
+	if !cfg.AutoUpdate {
+		t.Fatalf("AutoUpdate = false")
+	}
 }
 
 func TestInvalidIntEnvWarning(t *testing.T) {
@@ -79,6 +83,7 @@ func TestInvalidIntEnvWarning(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("EASY8_BASE_URL", "")
 	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "")
 	t.Setenv("EASY8_DEFAULT_PROJECT_ID", "abc")
 	t.Setenv("EASY8_DEFAULT_TRACKER_ID", "")
 
@@ -92,6 +97,28 @@ func TestInvalidIntEnvWarning(t *testing.T) {
 	}
 	if cfg.Defaults.ProjectID != 0 {
 		t.Fatalf("ProjectID should be 0, got %d", cfg.Defaults.ProjectID)
+	}
+}
+
+func TestInvalidBoolEnvWarning(t *testing.T) {
+	t.Setenv("EASY8_AUTOUPDATE", "sometimes")
+	t.Setenv("EASY8_DEFAULT_PROJECT_ID", "")
+	t.Setenv("EASY8_DEFAULT_TRACKER_ID", "")
+	t.Setenv("EASY8_DEFAULT_STATUS_ID", "")
+	t.Setenv("EASY8_DEFAULT_PRIORITY_ID", "")
+	t.Setenv("EASY8_DEFAULT_AUTHOR_ID", "")
+	t.Setenv("EASY8_DEFAULT_ASSIGNED_TO_ID", "")
+
+	var cfg Config
+	warnings := applyEnv(&cfg)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if warnings[0] != `invalid boolean for EASY8_AUTOUPDATE: "sometimes"` {
+		t.Fatalf("unexpected warning: %s", warnings[0])
+	}
+	if cfg.AutoUpdate {
+		t.Fatalf("AutoUpdate should be false")
 	}
 }
 
@@ -145,6 +172,28 @@ func TestLoadYAMLMerge(t *testing.T) {
 	}
 	if cfg.Defaults.TrackerID != 2 {
 		t.Fatalf("TrackerID = %d", cfg.Defaults.TrackerID)
+	}
+}
+
+func TestLoadYAMLAutoupdateOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EASY8_BASE_URL", "")
+	t.Setenv("EASY8_API_KEY", "")
+	t.Setenv("EASY8_AUTOUPDATE", "")
+
+	writeConfigFile(t, filepath.Join(home, ".config", "easy8", "config.yaml"), Config{AutoUpdate: true})
+
+	project := t.TempDir()
+	writeConfigFile(t, filepath.Join(project, ".easy8.yaml"), Config{AutoUpdate: false})
+	setWorkingDir(t, project)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.AutoUpdate {
+		t.Fatalf("expected local autoupdate=false to override global true")
 	}
 }
 

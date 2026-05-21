@@ -26,9 +26,18 @@ type Defaults struct {
 }
 
 type Config struct {
-	BaseURL  string   `yaml:"base_url"`
-	APIKey   string   `yaml:"api_key"`
-	Defaults Defaults `yaml:"defaults"`
+	BaseURL       string   `yaml:"base_url"`
+	APIKey        string   `yaml:"api_key"`
+	AutoUpdate    bool     `yaml:"autoupdate"`
+	autoUpdateSet bool     `yaml:"-"`
+	Defaults      Defaults `yaml:"defaults"`
+}
+
+type fileConfig struct {
+	BaseURL    string   `yaml:"base_url"`
+	APIKey     string   `yaml:"api_key"`
+	AutoUpdate *bool    `yaml:"autoupdate"`
+	Defaults   Defaults `yaml:"defaults"`
 }
 
 func Load() (Config, error) {
@@ -111,9 +120,18 @@ func readConfig(path string) (Config, error) {
 	defer file.Close()
 
 	decoder := yaml.NewDecoder(file)
-	var cfg Config
-	if err := decoder.Decode(&cfg); err != nil {
+	var raw fileConfig
+	if err := decoder.Decode(&raw); err != nil {
 		return Config{}, err
+	}
+	cfg := Config{
+		BaseURL:  raw.BaseURL,
+		APIKey:   raw.APIKey,
+		Defaults: raw.Defaults,
+	}
+	if raw.AutoUpdate != nil {
+		cfg.AutoUpdate = *raw.AutoUpdate
+		cfg.autoUpdateSet = true
 	}
 	return cfg, nil
 }
@@ -167,14 +185,15 @@ func localConfigPath() (string, error) {
 }
 
 func applyEnv(cfg *Config) []string {
+	var warnings []string
 	if base := os.Getenv("EASY8_BASE_URL"); base != "" {
 		cfg.BaseURL = base
 	}
 	if key := os.Getenv("EASY8_API_KEY"); key != "" {
 		cfg.APIKey = key
 	}
+	setBoolEnv(&cfg.AutoUpdate, &cfg.autoUpdateSet, "EASY8_AUTOUPDATE", &warnings)
 
-	var warnings []string
 	setIntEnv(&cfg.Defaults.ProjectID, "EASY8_DEFAULT_PROJECT_ID", &warnings)
 	setIntEnv(&cfg.Defaults.TrackerID, "EASY8_DEFAULT_TRACKER_ID", &warnings)
 	setIntEnv(&cfg.Defaults.StatusID, "EASY8_DEFAULT_STATUS_ID", &warnings)
@@ -182,6 +201,20 @@ func applyEnv(cfg *Config) []string {
 	setIntEnv(&cfg.Defaults.AuthorID, "EASY8_DEFAULT_AUTHOR_ID", &warnings)
 	setIntEnv(&cfg.Defaults.AssignedToID, "EASY8_DEFAULT_ASSIGNED_TO_ID", &warnings)
 	return warnings
+}
+
+func setBoolEnv(target *bool, set *bool, key string, warnings *[]string) {
+	value := os.Getenv(key)
+	if value == "" {
+		return
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("invalid boolean for %s: %q", key, value))
+		return
+	}
+	*target = parsed
+	*set = true
 }
 
 func setIntEnv(target *int, key string, warnings *[]string) {
@@ -203,6 +236,10 @@ func mergeConfig(base Config, overlay Config) Config {
 	}
 	if overlay.APIKey != "" {
 		base.APIKey = overlay.APIKey
+	}
+	if overlay.autoUpdateSet {
+		base.AutoUpdate = overlay.AutoUpdate
+		base.autoUpdateSet = true
 	}
 
 	if overlay.Defaults.ProjectID != 0 {

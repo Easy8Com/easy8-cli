@@ -18,7 +18,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.4"
+var Version = "0.1.5"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
@@ -51,6 +51,9 @@ func Run(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config error:", err)
 		return 1
+	}
+	if shouldRunStartupAutoUpdate(args[0]) {
+		maybeRunAutoUpdate(cfg.AutoUpdate)
 	}
 
 	switch args[0] {
@@ -112,12 +115,14 @@ func runSetup(args []string, cfg config.Config) int {
 	var priorityID optionalInt
 	var authorID optionalInt
 	var assignedToID optionalInt
+	var autoUpdate optionalBool
 	fs.Var(&projectID, "project-id", "Default project ID")
 	fs.Var(&trackerID, "tracker-id", "Default tracker ID")
 	fs.Var(&statusID, "status-id", "Default status ID")
 	fs.Var(&priorityID, "priority-id", "Default priority ID")
 	fs.Var(&authorID, "author-id", "Default author ID")
 	fs.Var(&assignedToID, "assigned-to-id", "Default assigned-to ID")
+	fs.Var(&autoUpdate, "autoupdate", "Enable automatic daily self-update")
 	globalOut := fs.Bool("global", false, "Save to global config (~/.config/easy8/config.yaml)")
 	localOut := fs.Bool("local", false, "Save to local config (.easy8.yaml)")
 	nonInteractive := fs.Bool("non-interactive", false, "Do not prompt for missing values")
@@ -203,11 +208,16 @@ func runSetup(args []string, cfg config.Config) int {
 	if assignedToID.set {
 		defaults.AssignedToID = assignedToID.value
 	}
+	autoUpdateValue := cfg.AutoUpdate
+	if autoUpdate.set {
+		autoUpdateValue = autoUpdate.value
+	}
 
 	newCfg := config.Config{
-		BaseURL:  strings.TrimSpace(baseURLValue),
-		APIKey:   strings.TrimSpace(apiKeyValue),
-		Defaults: defaults,
+		BaseURL:    strings.TrimSpace(baseURLValue),
+		APIKey:     strings.TrimSpace(apiKeyValue),
+		AutoUpdate: autoUpdateValue,
+		Defaults:   defaults,
 	}
 
 	var (
@@ -980,6 +990,11 @@ type optionalInt struct {
 	value int
 }
 
+type optionalBool struct {
+	set   bool
+	value bool
+}
+
 type issueAttachmentInput struct {
 	Path           string
 	Description    string
@@ -1003,6 +1018,17 @@ func (flagValue *optionalInt) String() string {
 		return ""
 	}
 	return fmt.Sprintf("%d", flagValue.value)
+}
+
+func (flagValue *optionalBool) String() string {
+	if !flagValue.set {
+		return ""
+	}
+	return strconv.FormatBool(flagValue.value)
+}
+
+func (flagValue *optionalBool) IsBoolFlag() bool {
+	return true
 }
 
 func (value *issueAttachmentPathValue) String() string {
@@ -1062,6 +1088,16 @@ func (flagValue *optionalInt) Set(value string) error {
 	parsed, err := parseInt(value)
 	if err != nil {
 		return err
+	}
+	flagValue.value = parsed
+	flagValue.set = true
+	return nil
+}
+
+func (flagValue *optionalBool) Set(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid bool: %s", value)
 	}
 	flagValue.value = parsed
 	flagValue.set = true
