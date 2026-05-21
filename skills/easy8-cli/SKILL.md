@@ -45,6 +45,12 @@ If `easy8` is still not found after install, ask user to restart terminal/sessio
 
 Do not use source-build fallbacks in normal user flows.
 
+To update an existing installation from GitHub Releases:
+
+```bash
+easy8 update
+```
+
 ## Authentication / Config Prerequisites
 
 Required config or env:
@@ -136,6 +142,14 @@ easy8 pbi list --q "<user text>" --quiet
 easy8 pbi update 42 --status done --quiet
 easy8 pbi update 42 --name "New name" --estimate 5 --description "Details" --quiet
 ```
+
+### CLI self-update
+
+```bash
+easy8 update --quiet
+```
+
+Use this only when the user asks to update the easy8 CLI itself.
 
 ## Output Format
 

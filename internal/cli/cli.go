@@ -18,7 +18,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.2"
+var Version = "0.1.3"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
@@ -29,15 +29,28 @@ const setupBanner = `                                   ┌───────
 ╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝     └─────────┘`
 
 func Run(args []string) int {
+	if len(args) == 0 {
+		printUsage()
+		return 2
+	}
+
+	switch args[0] {
+	case "commands":
+		return runCommands(args[1:])
+	case "update":
+		return runUpdate(args[1:])
+	case "version", "--version", "-v":
+		fmt.Println(Version)
+		return 0
+	case "help", "-h", "--help":
+		printUsage()
+		return 0
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config error:", err)
 		return 1
-	}
-
-	if len(args) == 0 {
-		printUsage()
-		return 2
 	}
 
 	switch args[0] {
@@ -51,14 +64,6 @@ func Run(args []string) int {
 		return runSetup(args[1:], cfg)
 	case "skill":
 		return runSkill(args[1:], cfg)
-	case "commands":
-		return runCommands(args[1:])
-	case "version", "--version", "-v":
-		fmt.Println(Version)
-		return 0
-	case "help", "-h", "--help":
-		printUsage()
-		return 0
 	default:
 		fmt.Fprintln(os.Stderr, "unknown command:", args[0])
 		printUsage()
@@ -884,6 +889,7 @@ func printUsage() {
 		"  easy8 setup [flags]",
 		"  easy8 skill [command] [flags]",
 		"  easy8 commands [flags]",
+		"  easy8 update [flags]",
 		"  easy8 version",
 		"",
 		"Commands:",
@@ -901,9 +907,10 @@ func printUsage() {
 		"  setup          Configure base URL and API key",
 		"  skill          Print/install skill file",
 		"  commands       List command catalog",
+		"  update         Update easy8 from GitHub Releases",
 		"  version        Print version",
 		"",
-		"Use 'easy8 issue --help', 'easy8 pbi --help', 'easy8 auth --help', 'easy8 setup --help', or 'easy8 skill --help' for details.",
+		"Use 'easy8 issue --help', 'easy8 pbi --help', 'easy8 auth --help', 'easy8 setup --help', 'easy8 skill --help', or 'easy8 update --help' for details.",
 	}
 	for _, line := range lines {
 		fmt.Fprintln(os.Stderr, line)

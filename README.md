@@ -65,7 +65,7 @@ go build -o easy8 ./cmd/easy8
 **Build with version stamp:**
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.2" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.3" -o easy8 ./cmd/easy8
 ```
 
 </details>
@@ -321,6 +321,16 @@ Updatable fields: `--name`, `--description`, `--status`, `--estimate`.
 easy8 version
 ```
 
+### Update CLI
+
+```bash
+easy8 update
+easy8 update --json
+easy8 update --quiet
+```
+
+`easy8 update` downloads the latest matching binary from GitHub Releases, verifies `checksums.txt`, and replaces the current executable path.
+
 ### Auth helpers
 
 ```bash
@@ -345,7 +355,7 @@ easy8 commands --quiet
 
 ### Machine readable output
 
-Entity commands support both machine modes:
+Entity and helper commands support both machine modes:
 
 - `--json`: envelope format (`ok`, `data`, `summary`, optional `breadcrumbs/context`)
 - `--quiet`: raw API-shaped JSON data
@@ -359,6 +369,8 @@ easy8 pbi list --json
 easy8 pbi list --quiet
 easy8 pbi show 42 --json
 easy8 pbi show 42 --quiet
+easy8 update --json
+easy8 update --quiet
 ```
 
 ## Testing

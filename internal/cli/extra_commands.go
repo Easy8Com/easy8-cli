@@ -431,6 +431,10 @@ func buildCommandCatalog() []commandInfo {
 			Description: "List command catalog",
 		},
 		{
+			Name:        "easy8 update",
+			Description: "Update easy8 from GitHub Releases",
+		},
+		{
 			Name:        "easy8 version",
 			Description: "Show version",
 		},
