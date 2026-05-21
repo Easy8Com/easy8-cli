@@ -7,12 +7,12 @@ import (
 
 const PrimaryName = "easy8-cli"
 
-var Names = []string{PrimaryName, "easy-query", "git-flow"}
+var Names = []string{PrimaryName}
 
 //go:embed easy8-cli/SKILL.md
 var Content []byte
 
-//go:embed easy8-cli/SKILL.md easy-query/SKILL.md git-flow/SKILL.md
+//go:embed easy8-cli/SKILL.md
 var bundle embed.FS
 
 func Read(name string) ([]byte, error) {

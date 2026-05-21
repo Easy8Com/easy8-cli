@@ -150,8 +150,6 @@ This repository contains bundled skills for agent-driven Easy8 workflows:
 
 ```text
 skills/easy8-cli/SKILL.md
-skills/easy-query/SKILL.md
-skills/git-flow/SKILL.md
 ```
 
 The skills are agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.

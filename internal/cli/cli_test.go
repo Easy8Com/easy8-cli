@@ -113,10 +113,10 @@ func TestSkillListQuiet(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &list); err != nil {
 		t.Fatalf("json error: %v", err)
 	}
-	if len(list) != 3 {
-		t.Fatalf("expected 3 bundled skills, got %+v", list)
+	if len(list) != 1 {
+		t.Fatalf("expected 1 bundled skill, got %+v", list)
 	}
-	if list[0].Name != "easy8-cli" || list[1].Name != "easy-query" || list[2].Name != "git-flow" {
+	if list[0].Name != "easy8-cli" {
 		t.Fatalf("unexpected skill list: %+v", list)
 	}
 }
@@ -130,11 +130,11 @@ func TestSkillSyncGlobalOpenCode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "Synced 3 skills") {
+	if !strings.Contains(stdout, "Synced 1 skills") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 
-	for _, name := range []string{"easy8-cli", "easy-query", "git-flow"} {
+	for _, name := range []string{"easy8-cli"} {
 		path := filepath.Join(configRoot, "opencode", "skills", name, "SKILL.md")
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -155,16 +155,16 @@ func TestSkillSyncLocalOpenCode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "Synced 3 skills") {
+	if !strings.Contains(stdout, "Synced 1 skills") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 
-	path := filepath.Join(project, ".opencode", "skills", "easy-query", "SKILL.md")
+	path := filepath.Join(project, ".opencode", "skills", "easy8-cli", "SKILL.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read synced skill: %v", err)
 	}
-	if !strings.Contains(string(data), "name: easy-query") {
+	if !strings.Contains(string(data), "name: easy8-cli") {
 		t.Fatalf("unexpected skill content")
 	}
 }
@@ -178,7 +178,7 @@ func TestSkillSyncDryRunDoesNotWrite(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "Would sync 3 skills") {
+	if !strings.Contains(stdout, "Would sync 1 skills") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 
