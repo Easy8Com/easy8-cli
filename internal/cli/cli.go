@@ -18,7 +18,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.3"
+var Version = "0.1.4"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
@@ -288,8 +288,8 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		AuthorID:     intPtr(*authorID),
 		AssignedToID: intPtr(*assignedToID),
 	}
-	if strings.TrimSpace(*description) != "" {
-		input.Description = stringPtr(*description)
+	if descriptionHTML := formatCKEditorHTML(*description); descriptionHTML != "" {
+		input.Description = stringPtr(descriptionHTML)
 	}
 	if strings.TrimSpace(*startDate) != "" {
 		input.StartDate = stringPtr(*startDate)
@@ -583,8 +583,8 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	if strings.TrimSpace(*subject) != "" {
 		input.Subject = stringPtr(*subject)
 	}
-	if strings.TrimSpace(*description) != "" {
-		input.Description = stringPtr(*description)
+	if descriptionHTML := formatCKEditorHTML(*description); descriptionHTML != "" {
+		input.Description = stringPtr(descriptionHTML)
 	}
 	if statusID.set {
 		input.StatusID = intPtr(statusID.value)
@@ -601,8 +601,8 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 		}
 		input.DoneRatio = intPtr(doneRatio.value)
 	}
-	if strings.TrimSpace(*notes) != "" {
-		input.Notes = stringPtr(*notes)
+	if notesHTML := formatCKEditorHTML(*notes); notesHTML != "" {
+		input.Notes = stringPtr(notesHTML)
 	}
 	if len(attachmentArgs.items) > 0 {
 		uploads, err := prepareIssueUploads(context.Background(), client, attachmentArgs.items)
@@ -823,8 +823,8 @@ func runPBIUpdate(args []string, cfg config.Config, client *api.Client) int {
 	if strings.TrimSpace(*name) != "" {
 		input.Name = name
 	}
-	if strings.TrimSpace(*description) != "" {
-		input.Description = description
+	if descriptionHTML := formatCKEditorHTML(*description); descriptionHTML != "" {
+		input.Description = stringPtr(descriptionHTML)
 	}
 	if strings.TrimSpace(*status) != "" {
 		input.Status = status
