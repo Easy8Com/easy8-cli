@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.6") {
+	if !strings.Contains(stdout, "0.1.7") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -830,6 +830,9 @@ func TestIssueUpdateWithAttachmentOnlyNoNotes(t *testing.T) {
 			}
 			if request.Issue.Notes != nil {
 				t.Fatalf("expected notes to be omitted, got %q", *request.Issue.Notes)
+			}
+			if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != api.AutomationSourceEasy8CLI {
+				t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
 			}
 			if len(request.Issue.Uploads) != 1 {
 				t.Fatalf("uploads count = %d", len(request.Issue.Uploads))

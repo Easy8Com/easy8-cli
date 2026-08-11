@@ -365,6 +365,9 @@ func TestUpdateIssueEmptyResponse(t *testing.T) {
 		if request.Issue.Notes == nil || *request.Issue.Notes != "test note" {
 			t.Fatalf("notes = %v", request.Issue.Notes)
 		}
+		if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != AutomationSourceEasy8CLI {
+			t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
+		}
 		// Redmine returns 200 with empty body on successful PUT.
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -396,6 +399,9 @@ func TestUpdateIssueWithUploadsSendsBody(t *testing.T) {
 		}
 		if len(request.Issue.Uploads) != 1 {
 			t.Fatalf("uploads count = %d", len(request.Issue.Uploads))
+		}
+		if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != AutomationSourceEasy8CLI {
+			t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
 		}
 		upload := request.Issue.Uploads[0]
 		if upload.Token != "456.def" {

@@ -26,6 +26,9 @@ func TestIssueUpdateFormatsCKEditorFields(t *testing.T) {
 			if request.Issue.Notes == nil || !strings.Contains(*request.Issue.Notes, "<li>Pridane testy</li>") {
 				t.Fatalf("notes = %v", request.Issue.Notes)
 			}
+			if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != api.AutomationSourceEasy8CLI {
+				t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
+			}
 			w.WriteHeader(http.StatusOK)
 		case r.URL.Path == "/issues/101.json" && r.Method == http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")

@@ -1,5 +1,7 @@
 package api
 
+const AutomationSourceEasy8CLI = "Easy8-CLI"
+
 type NamedRef struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
@@ -67,19 +69,20 @@ type UploadResponse struct {
 }
 
 type IssueInput struct {
-	Subject      *string       `json:"subject,omitempty"`
-	ProjectID    *int          `json:"project_id,omitempty"`
-	TrackerID    *int          `json:"tracker_id,omitempty"`
-	StatusID     *int          `json:"status_id,omitempty"`
-	PriorityID   *int          `json:"priority_id,omitempty"`
-	AuthorID     *int          `json:"author_id,omitempty"`
-	AssignedToID *int          `json:"assigned_to_id,omitempty"`
-	Description  *string       `json:"description,omitempty"`
-	StartDate    *string       `json:"start_date,omitempty"`
-	DueDate      *string       `json:"due_date,omitempty"`
-	DoneRatio    *int          `json:"done_ratio,omitempty"`
-	Notes        *string       `json:"notes,omitempty"`
-	Uploads      []IssueUpload `json:"uploads,omitempty"`
+	Subject          *string       `json:"subject,omitempty"`
+	ProjectID        *int          `json:"project_id,omitempty"`
+	TrackerID        *int          `json:"tracker_id,omitempty"`
+	StatusID         *int          `json:"status_id,omitempty"`
+	PriorityID       *int          `json:"priority_id,omitempty"`
+	AuthorID         *int          `json:"author_id,omitempty"`
+	AssignedToID     *int          `json:"assigned_to_id,omitempty"`
+	Description      *string       `json:"description,omitempty"`
+	StartDate        *string       `json:"start_date,omitempty"`
+	DueDate          *string       `json:"due_date,omitempty"`
+	DoneRatio        *int          `json:"done_ratio,omitempty"`
+	Notes            *string       `json:"notes,omitempty"`
+	AutomationSource *string       `json:"automation_source,omitempty"`
+	Uploads          []IssueUpload `json:"uploads,omitempty"`
 }
 
 type IssueRequest struct {

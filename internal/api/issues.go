@@ -170,6 +170,8 @@ func (c *Client) UpdateIssue(ctx context.Context, id int, input IssueInput) (Iss
 	}
 	path := fmt.Sprintf("/issues/%d.json", id)
 	var resp IssueResponse
+	automationSource := AutomationSourceEasy8CLI
+	input.AutomationSource = &automationSource
 	request := IssueRequest{Issue: input}
 	if err := c.doJSON(ctx, "PUT", path, nil, request, &resp); err != nil {
 		return IssueResponse{}, err
