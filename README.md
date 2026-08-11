@@ -1,111 +1,99 @@
 # easy8-cli
 
 ```text
-                                   ┌─────────┐
-███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
-██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝  │██     ██│
-█████╗  ███████║███████╗ ╚████╔╝   │ ███████ │
-██╔══╝  ██╔══██║╚════██║  ╚██╔╝    │██     ██│
-███████╗██║  ██║███████║   ██║     │ ███████ │
-╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝     └─────────┘
+                                   +---------+
+███████╗ █████╗ ███████╗██╗   ██╗  | ███████ |
+██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝  |██     ██|
+█████╗  ███████║███████╗ ╚████╔╝   | ███████ |
+██╔══╝  ██╔══██║╚════██║  ╚██╔╝    |██     ██|
+███████╗██║  ██║███████║   ██║     | ███████ |
+╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝     +---------+
 ```
 
-Small Go CLI for Easy8. Current scope: Issues and Product Backlog Items (PBIs).
-
-Official website: https://easy8.com
-
-## Goals
-
-- Create, show, list, search, and update issues.
-- List, show, and update product backlog items.
-- Provide JSON output for automation and skills.
-- Stay small, fast, and easy to extend.
+Small Go CLI for [Easy8](https://easy8.com). Current scope: Issues and Product Backlog Items (PBIs).
 
 ## Requirements
 
 - Easy8 API key
-- Go 1.22+ (only if building from source)
+- Go 1.22+ only when building from source
 
-## Quick Start
+## Install
 
 ### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.sh | bash
-easy8 setup
-easy8 issue list --limit 10
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/Easy8Com/easy8-cli/main/scripts/install.ps1 | iex
-easy8 setup
-easy8 issue list --limit 10
 ```
 
-The installers detect OS/architecture, download the matching binary from GitHub Releases, and verify SHA-256 checksums.
-If no release is published yet, use the source build option below.
+The installers detect OS/architecture, download the matching binary from [GitHub Releases](https://github.com/Easy8Com/easy8-cli/releases), and verify SHA-256 checksums.
 
-<details>
-<summary>Other installation methods</summary>
+If `easy8` is not found after installation, restart the terminal or make sure the install directory is on your `PATH`.
 
-**GitHub Release (manual):**
+## Configure
 
-1. Download the right binary from [Releases](https://github.com/Easy8Com/easy8-cli/releases).
-2. Download `checksums.txt` from the same release and verify SHA-256.
-3. Rename binary to `easy8` (or `easy8.exe`) and move it to a directory on your `PATH`.
-
-**Build locally:**
-
-```bash
-go build -o easy8 ./cmd/easy8
-```
-
-**Build with version stamp:**
-
-```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.7" -o easy8 ./cmd/easy8
-```
-
-</details>
-
-## Run
-
-```bash
-./easy8 issue list --limit 10
-```
-
-Or run without building from source:
-
-```bash
-go run ./cmd/easy8 issue list --limit 10
-```
-
-## Configuration
-
-Recommended (writes YAML config file):
+Run the setup wizard once:
 
 ```bash
 easy8 setup
 ```
 
-The interactive setup wizard asks whether to enable automatic daily updates and defaults to yes.
+The wizard saves the Easy8 base URL and API key to a YAML config file. It also asks whether to enable automatic daily updates and defaults to yes.
 
-Non-interactive examples:
+For scripts and CI, use non-interactive setup:
 
 ```bash
 easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>"
 easy8 setup --non-interactive --local --base-url "https://demo.easy8.com" --api-key "<your-key>"
-easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>" --autoupdate
 ```
+
+Or configure with environment variables:
+
+```bash
+export EASY8_BASE_URL="https://demo.easy8.com"
+export EASY8_API_KEY="<your-key>"
+```
+
+## First Command
+
+```bash
+easy8 issue list --limit 10
+```
+
+## Command Overview
+
+| Command | Purpose |
+| --- | --- |
+| `easy8 issue create` | Create an issue |
+| `easy8 issue show` | Show issue detail |
+| `easy8 issue list` | List issues |
+| `easy8 issue search` | Search issues |
+| `easy8 issue update` | Update an issue |
+| `easy8 pbi list` | List product backlog items |
+| `easy8 pbi show` | Show PBI detail |
+| `easy8 pbi update` | Update a PBI |
+| `easy8 auth status` | Show authentication status |
+| `easy8 auth login` | Save API key |
+| `easy8 auth logout` | Remove API key |
+| `easy8 setup` | Configure base URL, API key, defaults, and autoupdate |
+| `easy8 skill` | Print/install bundled agent skills |
+| `easy8 commands` | Print command catalog for agents |
+| `easy8 update` | Update easy8 from GitHub Releases |
+| `easy8 version` | Print version |
+
+## Configuration
 
 Config files:
 
 - Global: `~/.config/easy8/config.yaml`
-- Local (project override): `.easy8.yaml`
+- Local: `.easy8.yaml` in the current directory or a parent directory
 
-Load priority (highest to lowest):
+Load priority, highest first:
 
 1. Environment variables
 2. Local config `.easy8.yaml`
@@ -120,7 +108,7 @@ export EASY8_API_KEY="<your-key>"
 export EASY8_AUTOUPDATE=true
 ```
 
-Optional default IDs (avoid repeating on every create):
+Optional default IDs for `issue create`:
 
 ```bash
 export EASY8_DEFAULT_PROJECT_ID=1
@@ -131,123 +119,68 @@ export EASY8_DEFAULT_AUTHOR_ID=1
 export EASY8_DEFAULT_ASSIGNED_TO_ID=1
 ```
 
-You can also save these defaults through setup flags:
+The same defaults can be saved through setup flags:
 
 ```bash
-easy8 setup --non-interactive --global --base-url "https://demo.easy8.com" --api-key "<your-key>" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 1
+easy8 setup --non-interactive --global \
+  --base-url "https://demo.easy8.com" \
+  --api-key "<your-key>" \
+  --project-id 1 \
+  --tracker-id 1 \
+  --status-id 1 \
+  --priority-id 1 \
+  --author-id 1 \
+  --assigned-to-id 1
 ```
 
-Invalid integer and boolean values produce a warning on stderr.
+Invalid integer and boolean environment values produce a warning on stderr.
 
-Automatic daily updates can be enabled with the setup wizard, `easy8 setup --autoupdate`, or `EASY8_AUTOUPDATE=true`.
-Use `easy8 setup --autoupdate=false` to disable it explicitly in non-interactive environments such as Docker images.
-When enabled, easy8 silently checks GitHub Releases at most once every 24 hours on normal command startup, verifies `checksums.txt`, and updates the current executable if a newer release exists.
-The daily check state is stored in `~/.config/easy8/update-state.yaml`.
-Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.
+## Issues
 
-## Usage
-
-### Agent skill (source of truth)
-
-This repository contains bundled skills for agent-driven Easy8 workflows:
-
-```text
-skills/easy8-cli/SKILL.md
-```
-
-The skills are agent-agnostic and can be used with OpenCode, Claude Code, and Codex-style workflows.
-
-Sync all bundled skills into your global OpenCode skill directory:
+### List Issues
 
 ```bash
-easy8 skill sync --target opencode
+easy8 issue list --limit 10
+easy8 issue list --limit 10 --sort "priority:desc,due_date"
+easy8 issue list --q "onboarding"
 ```
 
-Sync into the current repository instead:
-
-```bash
-easy8 skill sync --target opencode --local
-```
-
-Preview or list bundled skills:
-
-```bash
-easy8 skill sync --target opencode --dry-run
-easy8 skill list
-```
-
-Install only the primary `easy8-cli` skill:
-
-```bash
-easy8 skill install --target opencode
-easy8 skill install --target claude
-easy8 skill install --target codex --local
-```
-
-Print embedded primary skill content:
-
-```bash
-easy8 skill
-```
-
-Examples of prompts:
-
-```text
-fix issue #1234
-fix pbi #42
-find pbi onboarding
-```
-
-Typical command mapping used by the skill:
-
-```bash
-easy8 issue show 1234 --quiet
-easy8 pbi show 42 --quiet
-easy8 pbi list --q "onboarding" --quiet
-```
-
-If the installed skill is not visible immediately, restart the OpenCode session so the skill index reloads.
-
-### Show issue detail
+### Show Issue Detail
 
 ```bash
 easy8 issue show 123
 easy8 issue show 123 --include journals,attachments
 easy8 issue show 123 --json
 easy8 issue show 123 --quiet
-easy8 issue show --id 123  # legacy compatible form
 ```
 
-### List issues
+`easy8 issue show --id 123` is also supported for compatibility.
 
-```bash
-easy8 issue list --limit 10 --sort "priority:desc,due_date"
-```
+### Search Issues
 
-### Search issues (fulltext)
+Fulltext search:
 
 ```bash
 easy8 issue search --q "onboarding"
 ```
 
-### Search issues with filters
+Search with ID filters:
 
 ```bash
 easy8 issue search --q "petr" --assignee-id 51 --status-id 2 --priority-id 3 --due-date 2024-01-10 --subject "Login" --task-type-id 1
 ```
 
-### Search issues with name lookups
+Search with name lookups:
 
 ```bash
 easy8 issue search --q "petr" --assignee "Alice Doe" --status "New" --priority "High" --task-type "Task" --project "Project A"
 ```
 
-Notes:
+For assignee, status, priority, task type, and project you can use either name or ID.
 
-- For assignee, status, priority, task type, and project you can use either name or ID.
-- Name lookups are resolved via `/users.json`, `/issue_statuses.json`, `/enumerations/issue_priorities.json`, `/trackers.json`, `/projects.json`.
+### Create Issue
 
-### Create issue
+The Easy8 API requires these fields when creating an issue: `subject`, `project_id`, `tracker_id`, `status_id`, `priority_id`, `author_id`, and `assigned_to_id`.
 
 ```bash
 easy8 issue create \
@@ -260,7 +193,11 @@ easy8 issue create \
   --assigned-to-id 2 \
   --description "Short summary" \
   --done-ratio 0
+```
 
+With attachments:
+
+```bash
 easy8 issue create \
   --subject "Fix onboarding" \
   --project-id 1 \
@@ -274,24 +211,26 @@ easy8 issue create \
   --attachment ./build.log
 ```
 
-### Update issue
+### Update Issue
 
 ```bash
 easy8 issue update 123 --status-id 5 --done-ratio 80
+easy8 issue update 123 --subject "New subject"
+easy8 issue update 123 --notes "Progress update"
 easy8 issue update 123 --attachment ./error.log
 easy8 issue update 123 --attachment ./screenshot.png --attachment-description "Failure screenshot"
-easy8 issue update --id 123 --status-id 5 --done-ratio 80  # legacy compatible form
 ```
 
-`--done-ratio` must be between 0 and 100.
+`easy8 issue update --id 123 --status-id 5` is also supported for compatibility.
 
-`--attachment` can be repeated.
+Issue update notes:
 
-`--attachment-description` is optional and applies to the immediately preceding `--attachment`.
+- `--done-ratio` must be between 0 and 100.
+- `--attachment` can be repeated.
+- `--attachment-description` is optional and applies to the immediately preceding `--attachment`.
+- `--notes` is optional, including attachment-only updates.
 
-`--notes` is optional for `issue update`, including attachment-only updates.
-
-## Product Backlog Items (PBIs)
+## Product Backlog Items
 
 ### List PBIs
 
@@ -301,16 +240,17 @@ easy8 pbi list --status to_do --board-id 17
 easy8 pbi list --q "design" --author-id 51
 ```
 
-Filters: `--status` (to_do, realization, done, deleted), `--author-id`, `--board-id`, `--q` (fulltext).
+Filters: `--status` (`to_do`, `realization`, `done`, `deleted`), `--author-id`, `--board-id`, and `--q`.
 
-### Show PBI detail
+### Show PBI Detail
 
 ```bash
 easy8 pbi show 42
 easy8 pbi show 42 --json
 easy8 pbi show 42 --quiet
-easy8 pbi show --id 42  # legacy compatible form
 ```
+
+`easy8 pbi show --id 42` is also supported for compatibility.
 
 ### Update PBI
 
@@ -318,61 +258,20 @@ easy8 pbi show --id 42  # legacy compatible form
 easy8 pbi update 42 --status done
 easy8 pbi update 42 --status done --json
 easy8 pbi update 42 --name "New name" --estimate 5 --description "Details"
-easy8 pbi update --id 42 --status done  # legacy compatible form
 ```
 
-Updatable fields: `--name`, `--description`, `--status`, `--estimate`.
+`easy8 pbi update --id 42 --status done` is also supported for compatibility.
 
-### Version
+Updatable fields: `--name`, `--description`, `--status`, and `--estimate`.
 
-```bash
-easy8 version
-```
+## Machine Output
 
-### Update CLI
+Entity and helper commands support two machine-readable modes:
 
-```bash
-easy8 update
-easy8 update --json
-easy8 update --quiet
-```
-
-`easy8 update` downloads the latest matching binary from GitHub Releases, verifies `checksums.txt`, and replaces the current executable path.
-
-To enable a silent daily update check for normal commands:
-
-```bash
-easy8 setup --autoupdate
-```
-
-### Auth helpers
-
-```bash
-easy8 auth status
-easy8 auth login --api-key "<your-key>"
-easy8 auth logout
-```
-
-For local auth in current repo:
-
-```bash
-easy8 auth login --api-key "<your-key>" --local
-easy8 auth logout --local
-```
-
-### Command catalog (for agents)
-
-```bash
-easy8 commands --json
-easy8 commands --quiet
-```
-
-### Machine readable output
-
-Entity and helper commands support both machine modes:
-
-- `--json`: envelope format (`ok`, `data`, `summary`, optional `breadcrumbs/context`)
+- `--json`: envelope format with `ok`, `data`, `summary`, and optional `breadcrumbs` / `context`
 - `--quiet`: raw API-shaped JSON data
+
+Examples:
 
 ```bash
 easy8 issue list --json
@@ -387,25 +286,135 @@ easy8 update --json
 easy8 update --quiet
 ```
 
+For a full command catalog:
+
+```bash
+easy8 commands --json
+easy8 commands --quiet
+```
+
+## Agent Skills
+
+This repository contains bundled skill files for agent-driven Easy8 workflows:
+
+```text
+skills/easy8-cli/SKILL.md
+```
+
+Print the embedded primary skill:
+
+```bash
+easy8 skill
+```
+
+List bundled skills:
+
+```bash
+easy8 skill list
+```
+
+Install only the primary `easy8-cli` skill:
+
+```bash
+easy8 skill install --target opencode
+easy8 skill install --target claude
+easy8 skill install --target codex --local
+```
+
+Sync all bundled skills:
+
+```bash
+easy8 skill sync --target opencode
+easy8 skill sync --target opencode --local
+easy8 skill sync --target opencode --dry-run
+```
+
+Example prompts after installing the skill:
+
+```text
+fix issue #1234
+fix pbi #42
+find pbi onboarding
+```
+
+## Updates
+
+Update the current executable from GitHub Releases:
+
+```bash
+easy8 update
+easy8 update --json
+easy8 update --quiet
+```
+
+Enable or disable silent daily update checks:
+
+```bash
+easy8 setup --autoupdate
+easy8 setup --autoupdate=false
+```
+
+When enabled, easy8 checks GitHub Releases at most once every 24 hours on normal command startup, verifies `checksums.txt`, and updates the current executable when a newer release exists.
+
+Autoupdate state is stored in `~/.config/easy8/update-state.yaml`.
+
+Autoupdate is skipped for `easy8 version`, `easy8 help`, `easy8 commands`, `easy8 update`, and `easy8 setup`.
+
+## Auth Helpers
+
+```bash
+easy8 auth status
+easy8 auth login --api-key "<your-key>"
+easy8 auth logout
+```
+
+For local auth in the current repository:
+
+```bash
+easy8 auth login --api-key "<your-key>" --local
+easy8 auth logout --local
+```
+
+## Build From Source
+
+```bash
+go build -o easy8 ./cmd/easy8
+```
+
+Build with a version stamp:
+
+```bash
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.7" -o easy8 ./cmd/easy8
+```
+
+Run without installing:
+
+```bash
+go run ./cmd/easy8 issue list --limit 10
+```
+
 ## Testing
 
-Unit tests (always run after any change):
+Unit tests:
 
 ```bash
 go test ./...
 ```
 
-Integration tests (require a running Easy8 server):
+Integration tests require a running Easy8 server:
 
 ```bash
 EASY8_BASE_URL="https://demo.easy8.com" EASY8_API_KEY="<your-key>" go test -tags integration -v -timeout 600s ./internal/api/
 ```
 
-Integration tests use the `//go:build integration` build tag and skip
-automatically when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
+Integration tests use the `//go:build integration` build tag and skip automatically when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Roadmap
 
-- Additional entities (projects, users, time, etc.)
+- Additional entities: projects, users, time entries, and more
 - Config profiles
-- Convenience commands (quick create, templates)
+- Convenience commands: quick create, templates
+
+## License
+
+MIT
