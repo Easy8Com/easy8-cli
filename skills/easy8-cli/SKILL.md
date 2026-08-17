@@ -109,6 +109,7 @@ easy8 issue search --q "<user text>" --quiet
 
 ```bash
 easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --quiet
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --parent-id 100 --quiet
 easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --attachment-description "Specification" --quiet
 ```
 
@@ -117,6 +118,7 @@ easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-
 ```bash
 easy8 issue update 124 --status-id 5 --quiet
 easy8 issue update 124 --done-ratio 80 --notes "progress update" --quiet
+easy8 issue update 124 --parent-id 100 --quiet
 easy8 issue update 124 --subject "New title" --description "Updated text" --quiet
 easy8 issue update 124 --attachment "./build.log" --quiet
 easy8 issue update 124 --attachment "./screenshot.png" --attachment-description "Failure screenshot" --quiet
@@ -133,6 +135,7 @@ Issue update expects IDs for lookup fields:
 - `--status-id`
 - `--priority-id`
 - `--assigned-to-id`
+- `--parent-id`
 
 ### PBI detail
 
@@ -196,3 +199,4 @@ After fetching entity, return a short brief:
 - `attach ./build.log to issue #123` -> `easy8 issue update 123 --attachment "./build.log" --quiet`
 - `attach ./shot.png to issue #123 with description "Failure screenshot"` -> `easy8 issue update 123 --attachment "./shot.png" --attachment-description "Failure screenshot" --quiet`
 - `create issue "Fix login" with attachment ./spec.pdf` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --quiet`
+- `create issue "Fix login" under #100` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --parent-id 100 --quiet`

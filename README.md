@@ -191,9 +191,12 @@ easy8 issue create \
   --priority-id 1 \
   --author-id 1 \
   --assigned-to-id 2 \
+  --parent-id 100 \
   --description "Short summary" \
   --done-ratio 0
 ```
+
+Use `--parent-id <issue-id>` to create the issue as a subtask.
 
 With attachments:
 
@@ -216,6 +219,7 @@ easy8 issue create \
 ```bash
 easy8 issue update 123 --status-id 5 --done-ratio 80
 easy8 issue update 123 --subject "New subject"
+easy8 issue update 123 --parent-id 100
 easy8 issue update 123 --notes "Progress update"
 easy8 issue update 123 --attachment ./error.log
 easy8 issue update 123 --attachment ./screenshot.png --attachment-description "Failure screenshot"
@@ -226,6 +230,7 @@ easy8 issue update 123 --attachment ./screenshot.png --attachment-description "F
 Issue update notes:
 
 - `--done-ratio` must be between 0 and 100.
+- `--parent-id` sets the parent issue and must be greater than 0.
 - `--attachment` can be repeated.
 - `--attachment-description` is optional and applies to the immediately preceding `--attachment`.
 - `--notes` is optional, including attachment-only updates.
@@ -384,7 +389,7 @@ go build -o easy8 ./cmd/easy8
 Build with a version stamp:
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.7" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.8" -o easy8 ./cmd/easy8
 ```
 
 Run without installing:

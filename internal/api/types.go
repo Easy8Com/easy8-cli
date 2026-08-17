@@ -20,6 +20,7 @@ type Issue struct {
 	Tracker     *NamedRef    `json:"tracker,omitempty"`
 	Status      *NamedRef    `json:"status,omitempty"`
 	Priority    *NamedRef    `json:"priority,omitempty"`
+	Parent      *NamedRef    `json:"parent,omitempty"`
 	Author      *NamedRef    `json:"author,omitempty"`
 	AssignedTo  *NamedRef    `json:"assigned_to,omitempty"`
 	Journals    []Journal    `json:"journals,omitempty"`
@@ -74,6 +75,7 @@ type IssueInput struct {
 	TrackerID        *int          `json:"tracker_id,omitempty"`
 	StatusID         *int          `json:"status_id,omitempty"`
 	PriorityID       *int          `json:"priority_id,omitempty"`
+	ParentIssueID    *int          `json:"parent_issue_id,omitempty"`
 	AuthorID         *int          `json:"author_id,omitempty"`
 	AssignedToID     *int          `json:"assigned_to_id,omitempty"`
 	Description      *string       `json:"description,omitempty"`

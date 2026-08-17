@@ -67,6 +67,9 @@ func outputIssueDetail(issue api.Issue) int {
 	fmt.Fprintf(w, "Tracker:\t%s\n", nameOrEmpty(issue.Tracker))
 	fmt.Fprintf(w, "Status:\t%s\n", nameOrEmpty(issue.Status))
 	fmt.Fprintf(w, "Priority:\t%s\n", nameOrEmpty(issue.Priority))
+	if parent := parentLabel(issue.Parent); parent != "" {
+		fmt.Fprintf(w, "Parent:\t%s\n", parent)
+	}
 	fmt.Fprintf(w, "Author:\t%s\n", nameOrEmpty(issue.Author))
 	fmt.Fprintf(w, "Assignee:\t%s\n", nameOrEmpty(issue.AssignedTo))
 	fmt.Fprintf(w, "Start date:\t%s\n", issue.StartDate)
@@ -168,6 +171,22 @@ func nameOrEmpty(ref *api.NamedRef) string {
 		return ""
 	}
 	return ref.Name
+}
+
+func parentLabel(ref *api.NamedRef) string {
+	if ref == nil {
+		return ""
+	}
+	if ref.Name != "" && ref.ID != 0 {
+		return fmt.Sprintf("#%d %s", ref.ID, ref.Name)
+	}
+	if ref.Name != "" {
+		return ref.Name
+	}
+	if ref.ID != 0 {
+		return fmt.Sprintf("#%d", ref.ID)
+	}
+	return ""
 }
 
 func formatFilesize(bytes int) string {

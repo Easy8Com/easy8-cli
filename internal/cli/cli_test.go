@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.7") {
+	if !strings.Contains(stdout, "0.1.8") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -556,6 +556,31 @@ func TestIssueCreateMissingSubject(t *testing.T) {
 	}
 }
 
+func TestIssueCreateParentIDInvalid(t *testing.T) {
+	setTestHome(t)
+
+	args := []string{"issue", "create", "--subject", "Test", "--project-id", "1", "--tracker-id", "1", "--status-id", "1", "--priority-id", "1", "--author-id", "1", "--assigned-to-id", "2", "--parent-id", "0"}
+	_, stderr, code := captureRun(t, args)
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "parent-id must be greater than 0") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+func TestIssueUpdateParentIDInvalid(t *testing.T) {
+	setTestHome(t)
+
+	_, stderr, code := captureRun(t, []string{"issue", "update", "101", "--parent-id", "0"})
+	if code != 2 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr, "parent-id must be greater than 0") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
 func TestIssueSearchMissingQuery(t *testing.T) {
 	setTestHome(t)
 
@@ -648,6 +673,44 @@ func TestIssueCreateJSONOutput(t *testing.T) {
 	}
 	if resp.Issue.ID != 202 {
 		t.Fatalf("unexpected issue id: %d", resp.Issue.ID)
+	}
+}
+
+func TestIssueCreateWithParentSendsParentIssueID(t *testing.T) {
+	var seen bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/issues.json" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		seen = true
+		var request api.IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if request.Issue.ParentIssueID == nil || *request.Issue.ParentIssueID != 100 {
+			t.Fatalf("parent_issue_id = %v", request.Issue.ParentIssueID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issue":{"id":202,"subject":"New task","parent":{"id":100,"name":"Parent task"}}}`))
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+
+	args := []string{"issue", "create", "--subject", "New task", "--project-id", "1", "--tracker-id", "1", "--status-id", "1", "--priority-id", "1", "--author-id", "1", "--assigned-to-id", "2", "--parent-id", "100", "--quiet"}
+	stdout, stderr, code := captureRun(t, args)
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !seen {
+		t.Fatal("expected create request")
+	}
+	var resp api.IssueResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("quiet json error: %v", err)
+	}
+	if resp.Issue.Parent == nil || resp.Issue.Parent.ID != 100 {
+		t.Fatalf("parent = %+v", resp.Issue.Parent)
 	}
 }
 
@@ -764,6 +827,46 @@ func TestIssueUpdateTableOutput(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Fix onboarding") {
 		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestIssueUpdateWithParentSendsParentIssueID(t *testing.T) {
+	var seen bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/issues/101.json" || r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		seen = true
+		var request api.IssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if request.Issue.ParentIssueID == nil || *request.Issue.ParentIssueID != 100 {
+			t.Fatalf("parent_issue_id = %v", request.Issue.ParentIssueID)
+		}
+		if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != api.AutomationSourceEasy8CLI {
+			t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","parent":{"id":100,"name":"Parent task"}}}`))
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+
+	stdout, stderr, code := captureRun(t, []string{"issue", "update", "101", "--parent-id", "100", "--quiet"})
+	if code != 0 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !seen {
+		t.Fatal("expected update request")
+	}
+	var resp api.IssueResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("quiet json error: %v", err)
+	}
+	if resp.Issue.Parent == nil || resp.Issue.Parent.ID != 100 {
+		t.Fatalf("parent = %+v", resp.Issue.Parent)
 	}
 }
 
@@ -996,6 +1099,9 @@ func TestIssueShowTableOutput(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Alice") {
 		t.Fatalf("expected assignee in stdout: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Parent task") {
+		t.Fatalf("expected parent in stdout: %s", stdout)
 	}
 	if !strings.Contains(stdout, "30%") {
 		t.Fatalf("expected done ratio in stdout: %s", stdout)
@@ -1509,9 +1615,9 @@ func newTestServer(t *testing.T) *httptest.Server {
 		if r.Method == http.MethodGet {
 			inc := r.URL.Query().Get("include")
 			if strings.Contains(inc, "journals") || strings.Contains(inc, "attachments") {
-				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15","journals":[{"id":500,"user":{"id":1,"name":"Bob"},"notes":"Started work on this","created_on":"2024-01-02","private_notes":false,"details":[]},{"id":501,"user":{"id":2,"name":"Alice"},"notes":"","created_on":"2024-01-03","private_notes":false,"details":[{"property":"attr","name":"status_id","old_value":"1","new_value":"2"}]}],"attachments":[{"id":300,"filename":"design.pdf","filesize":204800,"content_type":"application/pdf","description":"Design doc","version":1,"content_url":"https://example.com/att/300","author":{"id":1,"name":"Bob"},"created_on":"2024-01-01"}]}}`))
+				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"parent":{"id":100,"name":"Parent task"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15","journals":[{"id":500,"user":{"id":1,"name":"Bob"},"notes":"Started work on this","created_on":"2024-01-02","private_notes":false,"details":[]},{"id":501,"user":{"id":2,"name":"Alice"},"notes":"","created_on":"2024-01-03","private_notes":false,"details":[{"property":"attr","name":"status_id","old_value":"1","new_value":"2"}]}],"attachments":[{"id":300,"filename":"design.pdf","filesize":204800,"content_type":"application/pdf","description":"Design doc","version":1,"content_url":"https://example.com/att/300","author":{"id":1,"name":"Bob"},"created_on":"2024-01-01"}]}}`))
 			} else {
-				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
+				_, _ = w.Write([]byte(`{"issue":{"id":101,"subject":"Fix onboarding","description":"Onboarding flow needs fixing","status":{"id":1,"name":"New"},"priority":{"id":4,"name":"Normal"},"parent":{"id":100,"name":"Parent task"},"project":{"id":5,"name":"Alpha"},"tracker":{"id":7,"name":"Task"},"author":{"id":1,"name":"Bob"},"assigned_to":{"id":2,"name":"Alice"},"done_ratio":30,"start_date":"2024-01-01","due_date":"2024-02-01","created_on":"2024-01-01","updated_on":"2024-01-15"}}`))
 			}
 			return
 		}

@@ -164,6 +164,9 @@ func TestCreateIssueSendsBody(t *testing.T) {
 		if request.Issue.Subject == nil || *request.Issue.Subject != "New" {
 			t.Fatalf("subject = %v", request.Issue.Subject)
 		}
+		if request.Issue.ParentIssueID == nil || *request.Issue.ParentIssueID != 99 {
+			t.Fatalf("parent_issue_id = %v", request.Issue.ParentIssueID)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{\"issue\":{\"id\":10,\"subject\":\"New\"}}"))
 	}))
@@ -172,9 +175,11 @@ func TestCreateIssueSendsBody(t *testing.T) {
 	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
 	subject := "New"
 	projectID := 1
+	parentIssueID := 99
 	input := IssueInput{
-		Subject:   &subject,
-		ProjectID: &projectID,
+		Subject:       &subject,
+		ProjectID:     &projectID,
+		ParentIssueID: &parentIssueID,
 	}
 	resp, err := client.CreateIssue(context.Background(), input)
 	if err != nil {
@@ -365,6 +370,9 @@ func TestUpdateIssueEmptyResponse(t *testing.T) {
 		if request.Issue.Notes == nil || *request.Issue.Notes != "test note" {
 			t.Fatalf("notes = %v", request.Issue.Notes)
 		}
+		if request.Issue.ParentIssueID == nil || *request.Issue.ParentIssueID != 99 {
+			t.Fatalf("parent_issue_id = %v", request.Issue.ParentIssueID)
+		}
 		if request.Issue.AutomationSource == nil || *request.Issue.AutomationSource != AutomationSourceEasy8CLI {
 			t.Fatalf("automation_source = %v", request.Issue.AutomationSource)
 		}
@@ -375,7 +383,8 @@ func TestUpdateIssueEmptyResponse(t *testing.T) {
 
 	client := &Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
 	notes := "test note"
-	resp, err := client.UpdateIssue(context.Background(), 42, IssueInput{Notes: &notes})
+	parentIssueID := 99
+	resp, err := client.UpdateIssue(context.Background(), 42, IssueInput{Notes: &notes, ParentIssueID: &parentIssueID})
 	if err != nil {
 		t.Fatalf("UpdateIssue error: %v", err)
 	}
